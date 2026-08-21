@@ -757,6 +757,7 @@ REMEDIES = {
     "unknown_parent": "parent does not exist.",
     "unknown_implementer": "satisfied_by names a node that does not exist.",
     "duplicate_ref": "two nodes claim the same external item. Which one is it?",
+    "shadowed_ref": "rename the ref or drop it - the node id wins, and always will.",
 }
 
 

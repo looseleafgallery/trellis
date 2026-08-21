@@ -112,13 +112,25 @@ trellis state ENG-1552
 
 Node ids always win, and a ref naming two nodes resolves to neither — it says
 which two, because picking one would be inventing an answer the graph does not
-have. `check` reports a shared ref as `duplicate_ref` rather than refusing the
-graph: splitting one ticket across two nodes is a legitimate thing to have
-done, and only the join is ambiguous. `trellis state --ref` shows the column,
-`--json` carries it on every node record, and snapshots keep it so a frozen
-record stays joinable.
+have. `trellis state --ref` shows the column, `--json` carries it on every node
+record, and snapshots keep it so a frozen record stays joinable.
 
-Quote a ref that starts with `#`, or YAML reads it as a comment: `ref: "#39"`.
+A ref that cannot resolve is reported rather than left to be discovered:
+
+| | |
+|---|---|
+| `duplicate_ref` | two nodes claim the same item — only the join is ambiguous, so this is info, not a refusal |
+| `shadowed_ref` | the ref is also a node id, so a lookup returns that node instead and this ref can never resolve |
+
+One node, one ref. A list is refused at load rather than coerced — `ref:
+[ENG-1599, ENG-1600]` would otherwise become the string `"['ENG-1599',
+'ENG-1600']"`, which validates and displays and finds nothing. If something is
+tracked twice, put the second id in the title or split the node.
+
+Two YAML papercuts, both refused by name rather than silently accepted: quote a
+ref starting with `#` or it reads as a comment (`ref: "#39"`), and quote `yes`,
+`no`, `on` or `off` or they read as booleans. A bare number is fine — `ref:
+1552` is a ticket id, and looking it up by `1552` works.
 
 **This is identity, not grounding.** It says *which thing this is*, never *is
 this claim still true* — no status is ever set from it. There is deliberately

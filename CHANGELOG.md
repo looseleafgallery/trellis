@@ -72,6 +72,23 @@ expensive to break.
 
 ### Fixed
 
+- A free-text field given something that is not one value is refused instead
+  of coerced. `ref: [ENG-1599, ENG-1600]` used to load clean, render as the
+  Python repr `['ENG-1599', 'ENG-1600']`, and never resolve — a value that
+  validates, displays, and compares as a perfectly good string while meaning
+  nothing. `title`, `awaiting`, and `notes` were coerced the same way; `ref` is
+  simply where it became visible, being the only one with a lookup behind it.
+  A bare numeric ticket id (`ref: 1552`) is still accepted, since YAML reads it
+  as an int and writing one is normal; a YAML boolean (`ref: yes`) is refused
+  by name, being the same trap as `ref: #39` reading as a comment.
+
+- `check` reports `shadowed_ref` when a node's `ref:` is also a node id. Node
+  ids win any lookup, which is what keeps declaring a ref from changing what an
+  existing command means — but the consequence used to be silent, so the only
+  way to discover the dead join was to try it and get somebody else's node
+  back, which looks like a correct answer. Info, not an error: nothing is
+  broken and the other node is returned correctly. Only the join is dead.
+
 - Tests no longer inherit the machine's global git config. On a machine with
   commit signing enforced, eleven fixtures errored before asserting anything
   and named gpg rather than the fixture, so a contributor's first `pytest`

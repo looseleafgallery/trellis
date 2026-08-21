@@ -217,6 +217,45 @@ def is_referenceable(node_id: str) -> bool:
     return bool(parts) and all(part.isidentifier() for part in parts)
 
 
+# Free-text fields, and what to say when one is not free text. `ref` earns its
+# own hint because it is the only one with a lookup behind it, so a malformed
+# value is discovered by the query failing rather than by reading the file.
+FREE_TEXT_HINTS = {
+    "ref": " A node is one external item: put the second id in the title, or"
+    " split the node.",
+}
+
+
+def free_text(node_id: str, field: str, value: object) -> str:
+    """One scalar, as a string — or a refusal naming what to do instead.
+
+    Coercing with `str()` is what a free-text field wants for a number and
+    exactly wrong for everything else: a list becomes its Python repr, which
+    validates, displays, and compares as a perfectly good string that means
+    nothing. `ref: [ENG-1, ENG-2]` looked accepted and was never findable.
+
+    What is accepted is decided by what a person plausibly meant. YAML reads
+    `ref: 1552` as an int, and a bare numeric ticket id is a normal thing to
+    write, so that one is coerced. Everything else is a mistake worth naming.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    # Before the int check: bool is an int, and `ref: yes` is the YAML trap.
+    if isinstance(value, bool):
+        raise ModelError(
+            f"{node_id}: `{field}` is a YAML boolean, not text. YAML reads "
+            f"yes, no, on, off, true and false that way - quote it."
+        )
+    if isinstance(value, int):
+        return str(value)
+    hint = FREE_TEXT_HINTS.get(field, "")
+    raise ModelError(
+        f"{node_id}: `{field}` must be one value, got a {type(value).__name__}.{hint}"
+    )
+
+
 def node_from_dict(data: dict, source: str = "") -> Node:
     if not isinstance(data, dict):
         raise ModelError(f"{source}: expected a mapping, got {type(data).__name__}")
@@ -334,7 +373,7 @@ def node_from_dict(data: dict, source: str = "") -> Node:
         id=node_id,
         kind=kind,
         status=status,
-        title=str(data.get("title") or node_id),
+        title=free_text(node_id, "title", data.get("title")) or node_id,
         parent=data.get("parent"),
         gates=gates,
         provides=provides,
@@ -343,12 +382,12 @@ def node_from_dict(data: dict, source: str = "") -> Node:
         publishes=publishes,
         evidence=edge_evidence_t,
         acknowledge=acknowledge,
-        awaiting=str(data.get("awaiting") or "").strip(),
-        # Not validated beyond being a string. A tracker id, a URL and a
+        awaiting=free_text(node_id, "awaiting", data.get("awaiting")).strip(),
+        # Beyond being one scalar, unvalidated. A tracker id, a URL and a
         # spreadsheet row are all legitimate here, and a schema that guessed
         # between them would be wrong for somebody.
-        ref=str(data.get("ref") or "").strip(),
-        notes=str(data.get("notes") or ""),
+        ref=free_text(node_id, "ref", data.get("ref")).strip(),
+        notes=free_text(node_id, "notes", data.get("notes")),
         source=source,
     )
 
