@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from . import expr as expr_mod
 from .cache import Cache
 from .engine import CycleError, Derived, Engine
-from .model import Graph, node_from_dict
+from .model import Graph, is_referenceable, node_from_dict
 
 # How urgently a finding wants attention, within its severity. Severity says
 # how bad it is; this says what to do first. Fourteen findings ranked only by
@@ -25,6 +25,7 @@ URGENCY = {
     "cycle_known_shape": 0,
     "dangling_reference": 0,
     "dangling_evidence": 0,
+    "unreferenceable_id": 0,
     "self_reference": 0,
     "gate_parse_error": 0,
     "unknown_parent": 0,
@@ -318,12 +319,27 @@ def collect(graph: Graph, engine: Engine | None = None) -> list[Problem]:
                 try:
                     target, _rest = graph.resolve_ref(dotted)
                 except KeyError:
+                    # A hyphenated id splits into two unknown names, which is a
+                    # baffling way to discover the real problem.
+                    split = [
+                        nid
+                        for nid in graph.ids()
+                        if not is_referenceable(nid) and nid.startswith(dotted)
+                    ]
+                    hint = (
+                        f" - did you mean {split[0]!r}? gates cannot reference it: "
+                        f"expressions are parsed as Python, so its punctuation "
+                        f"reads as an operator"
+                        if split
+                        else ""
+                    )
                     problems.append(
                         Problem(
                             "dangling_reference",
                             "error",
                             node.id,
-                            f"{label} {expr_name!r} references unknown node {dotted!r}",
+                            f"{label} {expr_name!r} references unknown node "
+                            f"{dotted!r}{hint}",
                         )
                     )
                     continue
@@ -386,6 +402,19 @@ def collect(graph: Graph, engine: Engine | None = None) -> list[Problem]:
                         f"- the edge it justified is gone",
                     )
                 )
+
+    for node in graph:
+        if not is_referenceable(node.id):
+            problems.append(
+                Problem(
+                    "unreferenceable_id",
+                    "warn",
+                    node.id,
+                    "no gate can reference this id: expressions are parsed as "
+                    "Python, so anything but letters, digits, underscores and "
+                    "dots reads as an operator. Use underscores instead",
+                )
+            )
 
     cycles = find_cycles(graph)
     cycle_members: set[str] = set()

@@ -1044,3 +1044,53 @@ def test_awaiting_is_cleared_when_the_decision_is_made(workspace):
         ["--graph", str(workspace), "set", "tools.streaming", "awaiting=none", "-y"]
     )
     assert load_graph(workspace).get("tools.streaming").awaiting == ""
+
+
+# -- a cycle must not crash any command --------------------------------------
+
+
+@pytest.fixture
+def cyclic(tmp_path):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: a\n    title: First\n    status: not_started\n"
+        "    gates: {start: b.done}\n"
+        "  - id: b\n    title: Second\n    status: not_started\n"
+        "    gates: {start: a.done}\n"
+    )
+    return graph_dir
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["state"],
+        ["state", "a"],
+        ["ready"],
+        ["doctor"],
+        ["trust"],
+        ["blocking", "a"],
+        ["blocking", "--all"],
+        ["graph"],
+        ["explain", "a"],
+        ["stats"],
+        ["snapshot"],
+        ["set", "a", "status=done", "-y"],
+    ],
+)
+def test_a_cycle_degrades_to_a_message_rather_than_a_traceback(cyclic, capsys, command):
+    """Derived state is undefined until the cycle is cut - but that is an
+    answer, not a crash. Every command reading derived state hit this."""
+    code = cli.main(["--graph", str(cyclic), *command])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "dependency cycle" in err
+    assert "trellis check" in err
+
+
+def test_check_still_works_on_a_cyclic_graph(cyclic, capsys):
+    """The one command that has to keep working, because it explains the shape."""
+    assert cli.main(["--graph", str(cyclic), "check"]) == 1
+    assert "dependency cycle" in capsys.readouterr().out

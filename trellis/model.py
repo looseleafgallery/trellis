@@ -195,6 +195,18 @@ class Node:
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
+def is_referenceable(node_id: str) -> bool:
+    """Whether a gate can name this id at all.
+
+    Gate expressions are parsed as Python, so an id is only reachable if every
+    dotted segment is a valid identifier. `a-b` reads as subtraction, and the
+    reference silently becomes two unknown names — which is a confusing way to
+    find out, so `check` names it instead.
+    """
+    parts = node_id.split(".")
+    return bool(parts) and all(part.isidentifier() for part in parts)
+
+
 def node_from_dict(data: dict, source: str = "") -> Node:
     if not isinstance(data, dict):
         raise ModelError(f"{source}: expected a mapping, got {type(data).__name__}")
