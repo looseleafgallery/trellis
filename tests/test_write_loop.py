@@ -1094,3 +1094,85 @@ def test_check_still_works_on_a_cyclic_graph(cyclic, capsys):
     """The one command that has to keep working, because it explains the shape."""
     assert cli.main(["--graph", str(cyclic), "check"]) == 1
     assert "dependency cycle" in capsys.readouterr().out
+
+
+# -- durable state belongs to the graph, not the invocation ------------------
+
+
+@pytest.fixture
+def project(tmp_path, monkeypatch):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text("id: a\ntitle: Thing\nstatus: not_started\n")
+    return graph_dir
+
+
+def test_however_the_graph_is_spelled_it_is_one_project(project, monkeypatch):
+    """`.`, `graph`, and an absolute path are the same graph."""
+    from trellis.loader import project_root
+
+    monkeypatch.chdir(project)
+    inside = project_root(".")
+    monkeypatch.chdir(project.parent)
+    beside = project_root("graph")
+    absolute = project_root(project)
+
+    assert inside == beside == absolute == project.parent.resolve()
+
+
+def test_one_graph_keeps_one_journal(project, monkeypatch):
+    monkeypatch.chdir(project)
+    cli.main(["--graph", ".", "set", "a", "status=done", "-y", "--because", "inside"])
+
+    monkeypatch.chdir(project.parent)
+    cli.main(
+        [
+            "--graph",
+            "graph",
+            "set",
+            "a",
+            "status=in_progress",
+            "-y",
+            "--because",
+            "outside",
+        ]
+    )
+
+    journals = list(project.parent.rglob("journal.jsonl"))
+    assert len(journals) == 1, f"history split across {journals}"
+
+    entries = journal.read(project)
+    assert [e["reason"] for e in entries] == ["inside", "outside"]
+
+
+def test_history_is_the_same_from_anywhere(project, monkeypatch, capsys):
+    monkeypatch.chdir(project.parent)
+    cli.main(["--graph", "graph", "set", "a", "status=done", "-y"])
+    capsys.readouterr()
+
+    cli.main(["--graph", "graph", "history"])
+    from_parent = capsys.readouterr().out
+    monkeypatch.chdir(project)
+    cli.main(["--graph", ".", "history"])
+    assert capsys.readouterr().out == from_parent
+
+
+def test_a_write_from_elsewhere_is_not_reported_as_drift(project, monkeypatch):
+    """The false accusation: trellis made the change, then blamed the user."""
+    monkeypatch.chdir(project)
+    cli.main(["--graph", ".", "set", "a", "status=done", "-y"])
+
+    monkeypatch.chdir(project.parent)
+    cli.main(["--graph", "graph", "set", "a", "status=in_progress", "-y"])
+
+    monkeypatch.chdir(project)
+    assert journal.drift(Path("."), load_graph(".")) == []
+
+
+def test_the_cache_and_snapshots_follow_the_same_root(project, monkeypatch):
+    from trellis import snapshot as snapshot_mod
+
+    monkeypatch.chdir(project)
+    inside = snapshot_mod.snapshot_dir(".")
+    monkeypatch.chdir(project.parent)
+    assert inside == snapshot_mod.snapshot_dir("graph")

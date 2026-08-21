@@ -34,6 +34,7 @@ from pathlib import Path
 from . import evidence as evidence_mod
 from . import journal, queries, viz
 from .engine import ENGINE_VERSION, Engine
+from .loader import project_root
 
 SNAPSHOT_DIRNAME = "snapshots"
 INDEX_NAME = "index.jsonl"
@@ -47,7 +48,7 @@ class SnapshotError(RuntimeError):
 def snapshot_dir(graph_dir: str | Path) -> Path:
     # A sibling of `graph/`, not inside `.trellis/`: snapshots are deliberate
     # artefacts someone asked for, and are meant to be committed and shared.
-    return Path(graph_dir).parent / SNAPSHOT_DIRNAME
+    return project_root(graph_dir) / SNAPSHOT_DIRNAME
 
 
 def _version() -> str:
@@ -188,7 +189,7 @@ BUILTIN = ("json", "mermaid")
 
 def load_renderers(graph_dir: str | Path) -> dict[str, dict]:
     """External renderers declared in trellis.toml, if there is one."""
-    path = Path(graph_dir).parent / CONFIG_NAME
+    path = project_root(graph_dir) / CONFIG_NAME
     if not path.exists():
         return {}
     try:

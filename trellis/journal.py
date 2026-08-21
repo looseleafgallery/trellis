@@ -15,13 +15,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .loader import project_root
 from .model import Graph, is_retreat
 
 JOURNAL_NAME = "journal.jsonl"
 
 
 def journal_path(graph_dir: str | Path) -> Path:
-    return Path(graph_dir).parent / ".trellis" / JOURNAL_NAME
+    return project_root(graph_dir) / ".trellis" / JOURNAL_NAME
 
 
 def record(

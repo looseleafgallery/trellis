@@ -52,6 +52,13 @@ expensive to break.
 
 ### Fixed
 
+- The journal, cache, snapshots and `trellis.toml` were located relative to how
+  `--graph` was spelled rather than to where the graph is, so `.` and `graph`
+  were two different projects. One graph could accumulate two journals with
+  half the history in each, and `drift` would report a change made through
+  trellis from another directory as an edit made outside it. Paths are resolved
+  now, so durable state belongs to the graph rather than to the invocation.
+
 - Every command that reads derived state crashed with a traceback on a graph
   containing a cycle. `ready`, `doctor`, `trust`, `blocking`, `graph`,
   `explain`, `stats`, `snapshot` and `set` now report the cycle and point at

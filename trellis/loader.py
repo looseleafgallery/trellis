@@ -17,6 +17,18 @@ from .model import RESERVED_EXPORTS, Graph, ModelError, Node, node_from_dict
 GRAPH_DIRNAME = "graph"
 
 
+def project_root(graph_dir: str | os.PathLike) -> Path:
+    """The directory that owns a graph's durable state.
+
+    Resolved, always. Deriving it from the argument as spelled makes `.` and
+    `graph` two different projects — so the same graph gets two journals, two
+    caches, and two drift baselines, and half your history is invisible
+    depending on where you were standing. State belongs to the graph, not to
+    the invocation.
+    """
+    return Path(graph_dir).resolve().parent
+
+
 def find_graph_dir(start: str | os.PathLike | None = None) -> Path:
     """Walk upward looking for a `graph/` directory, git-style."""
     cur = Path(start or Path.cwd()).resolve()
