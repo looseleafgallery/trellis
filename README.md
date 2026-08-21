@@ -281,9 +281,15 @@ answer, and starts cold — while an agent already working in your repo has read
 the design docs and been in the conversation.
 
 So the procedure lives in [`AGENTS.md`](AGENTS.md), written for an agent to
-execute with you. It covers the questions that actually produce edges (asking
-someone to list their projects does not), why contracts bootstrap first and
-nearly free, and why a first graph should stop at about eight nodes.
+execute with you. Its central rule, measured rather than asserted: **take nodes
+from anywhere, take edges from a system of record, and interview only for the
+edges no system of record has.** On the first real bootstrap, 2 of 7 edges read
+out of prose were wrong; every edge taken from the tracker was right.
+
+It also covers why the interview is how you reach the person rather than a
+fallback for having no documents, why contracts bootstrap first and nearly free
+— and cannot come from a tracker at all — and why a first graph should stop at
+about eight nodes.
 
 One thing in it is load-bearing enough to repeat here: **the agent transcribes
 the tool's objections rather than generating them.** Ending a bootstrap by
