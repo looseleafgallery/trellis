@@ -52,6 +52,7 @@ URGENCY = {
     "rollup_lagging": 5,
     "awaiting_decision": 3,
     "duplicate_ref": 4,
+    "shadowed_ref": 4,
     "inert_node": 5,
     "unowned_node": 5,
 }
@@ -535,6 +536,23 @@ def collect(
                     node.id,
                     "requires nothing and nothing requires it - it carries no "
                     "relationship the graph can use",
+                )
+            )
+
+        # A ref that happens to be some other node's id can never resolve:
+        # node ids win, and that rule is what keeps declaring a ref from
+        # changing what an existing command means. The rule is right and its
+        # consequence is silent, so the only way to discover the dead join is
+        # to try it and get somebody else's node back — which looks like a
+        # correct answer.
+        if node.ref and node.ref in graph:
+            problems.append(
+                Problem(
+                    "shadowed_ref",
+                    "info",
+                    node.id,
+                    f"ref {node.ref!r} is also a node id, so a lookup by it "
+                    f"returns that node instead - this ref can never resolve",
                 )
             )
 

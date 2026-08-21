@@ -69,10 +69,15 @@ status: in_progress
 ```
 
 Put the id there, **not in the title**. A title is the field most likely to be
-reworded, and a ref buried in one breaks every join the moment it is. Quote a
-ref that starts with `#`, or YAML reads it as a comment. There is no `owner:`
-field; who work waits on is a tracker's job, and `awaiting:` covers a decision
-being owed.
+reworded, and a ref buried in one breaks every join the moment it is.
+
+**One node, one ref** — a list is refused, not coerced. If a piece of work is
+tracked as two tickets, name the second in the title or split the node. Quote
+anything YAML would read as something other than text: `"#39"` is a comment
+otherwise, and `yes` / `no` / `on` / `off` are booleans. A bare number is fine.
+
+There is no `owner:` field; who work waits on is a tracker's job, and
+`awaiting:` covers a decision being owed.
 
 ## Grammar you will get wrong from memory
 

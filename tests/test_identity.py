@@ -273,3 +273,110 @@ def test_attaching_a_ref_is_journaled(workspace):
 def test_a_ref_can_be_cleared(workspace):
     cli.main(["--graph", str(workspace), "set", "safety.d1", "ref=none", "-y"])
     assert load_graph(workspace).get("safety.d1").ref == ""
+
+
+# -- a ref that cannot resolve says so --------------------------------------
+#
+# Two ways to declare a join key that can never work. #46: the value is not one
+# scalar, so it keys on a Python repr. #43: the value is well-formed but names
+# a node, which always wins. Both used to be silent, which is the failure mode
+# that costs more than the feature returns.
+
+
+def test_a_list_ref_is_refused():
+    """#46: it loaded, displayed as ['ENG-1599', 'ENG-1600'], and never
+    resolved. A repr validates and compares as a perfectly good string that
+    means nothing."""
+    with pytest.raises(ModelError, match="must be one value, got a list"):
+        node_from_dict({"id": "a", "ref": ["ENG-1599", "ENG-1600"]})
+
+
+def test_the_refusal_says_what_to_do_instead():
+    with pytest.raises(ModelError, match="put the second id in the title"):
+        node_from_dict({"id": "a", "ref": ["ENG-1599", "ENG-1600"]})
+
+
+def test_a_mapping_ref_is_refused():
+    with pytest.raises(ModelError, match="must be one value, got a dict"):
+        node_from_dict({"id": "a", "ref": {"tracker": "ENG-1599"}})
+
+
+def test_a_numeric_ref_is_a_ticket_id_not_a_mistake():
+    """YAML reads `ref: 1552` as an int, and a bare numeric ticket id is a
+    normal thing to write."""
+    assert node_from_dict({"id": "a", "ref": 1552}).ref == "1552"
+
+
+def test_a_numeric_ref_still_resolves(tmp_path, capsys):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text("nodes:\n  - id: a\n    ref: 1552\n")
+    assert cli.main(["--graph", str(graph_dir), "state", "1552"]) == 0
+    assert "a  (work)" in capsys.readouterr().out
+
+
+def test_a_boolean_ref_names_the_yaml_trap():
+    """`ref: yes` is a bool, the same class as `ref: #39` being a comment."""
+    with pytest.raises(ModelError, match="YAML boolean"):
+        node_from_dict({"id": "a", "ref": True})
+
+
+def test_the_whole_free_text_class_is_covered():
+    """`ref` is where this became visible because it is the only one of the
+    four with a lookup behind it - not because it was the only one wrong."""
+    for field in ("ref", "title", "awaiting", "notes"):
+        with pytest.raises(ModelError, match="must be one value"):
+            node_from_dict({"id": "a", field: ["x", "y"]})
+
+
+def test_an_absent_title_still_falls_back_to_the_id():
+    assert node_from_dict({"id": "a"}).title == "a"
+
+
+def test_the_refusal_reaches_the_write_path(tmp_path):
+    """A model proposing a list ref through `log` is rejected too: validation
+    runs the real constructor rather than re-deriving the rules."""
+    from trellis import delta as delta_mod
+
+    graph = build({"id": "a", "status": "not_started"})
+    problems = delta_mod.validate(
+        delta_mod.Delta(
+            new_nodes=[{"id": "b", "ref": ["ENG-1", "ENG-2"], "status": "not_started"}]
+        ),
+        graph,
+    )
+    assert any("must be one value" in p for p in problems)
+
+
+def test_a_ref_shadowing_a_node_id_is_a_finding():
+    """#43: node ids win, so this ref can never resolve - and the only way to
+    find out was to try it and get somebody else's node back."""
+    graph = build({"id": "a"}, {"id": "shadow", "ref": "a"})
+    problems = [p for p in queries.collect(graph) if p.code == "shadowed_ref"]
+    assert [p.node for p in problems] == ["shadow"]
+    assert "can never resolve" in problems[0].message
+
+
+def test_a_shadowed_ref_is_not_an_error():
+    """The graph is not broken and the other node is returned correctly. Only
+    the join is dead."""
+    graph = build({"id": "a"}, {"id": "shadow", "ref": "a"})
+    problems = [p for p in queries.collect(graph) if p.code == "shadowed_ref"]
+    assert all(p.severity == "info" for p in problems)
+
+
+def test_an_ordinary_ref_shadows_nothing():
+    graph = build({"id": "a"}, {"id": "b", "ref": "ENG-1"})
+    assert not [p for p in queries.collect(graph) if p.code == "shadowed_ref"]
+
+
+def test_reporting_it_does_not_change_who_wins(tmp_path, capsys):
+    """Naming the consequence is the fix; letting the ref win would trade away
+    the property that makes the rule right."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n  - id: a\n    status: done\n  - id: shadow\n    ref: a\n"
+    )
+    assert cli.main(["--graph", str(graph_dir), "state", "a"]) == 0
+    assert capsys.readouterr().out.startswith("a  (work)")
