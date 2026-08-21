@@ -49,6 +49,50 @@ def _emit(payload, as_json: bool) -> None:
         print(json.dumps(payload, indent=2, default=str))
 
 
+def _node_json(graph: Graph, d: Derived) -> dict:
+    """A derived record, plus the external id the node declares.
+
+    `ref` is read from the graph rather than carried on `Derived`, which is
+    persisted: it is declared state, and it is deliberately outside the
+    fingerprint, so a cached record would have no reason to be invalidated when
+    it changed. Merging it at emit time keeps the cache honest and the join
+    current.
+    """
+    payload = d.as_dict()
+    payload["ref"] = graph.get(d.id).ref or None
+    return payload
+
+
+def _resolve(graph: Graph, token: str) -> str | None:
+    """A node id, or an external `ref:` standing in for one.
+
+    Node ids always win. A ref is only consulted when the token names no node,
+    so adding a `ref:` can never change what an existing command means — and a
+    ref matching several nodes resolves to nothing rather than to a guess,
+    because picking one would be inventing an answer the graph does not have.
+
+    Returns None when nothing matched; the caller reports it.
+    """
+    if token in graph:
+        return token
+    matches = graph.by_ref(token)
+    return matches[0] if len(matches) == 1 else None
+
+
+def _unknown(graph: Graph, token: str) -> int:
+    """Report a token that named neither a node nor exactly one ref."""
+    matches = graph.by_ref(token)
+    if len(matches) > 1:
+        print(
+            f"error: ref {token!r} is declared by {len(matches)} nodes "
+            f"({', '.join(matches)}) - name one of them",
+            file=sys.stderr,
+        )
+    else:
+        print(f"error: unknown node {token!r}", file=sys.stderr)
+    return 2
+
+
 # -- commands ---------------------------------------------------------------
 
 
@@ -80,7 +124,12 @@ def cmd_check(args) -> int:
     return 1 if any(p.severity == "error" for p in problems) else 0
 
 
-def _print_tree(engine: Engine, derived: dict[str, Derived], roots: list[str]) -> None:
+def _print_tree(
+    engine: Engine,
+    derived: dict[str, Derived],
+    roots: list[str],
+    show_ref: bool = False,
+) -> None:
     def walk(node_id: str, depth: int) -> None:
         d = derived[node_id]
         node = engine.graph.get(node_id)
@@ -94,6 +143,7 @@ def _print_tree(engine: Engine, derived: dict[str, Derived], roots: list[str]) -
             )
         elif d.kind == "contract" and node.version is not None:
             extra = f"  [v{node.version}]"
+        ref = f"  ({node.ref})" if show_ref and node.ref else ""
         flags = ""
         if any(v["severity"] == "error" for v in d.violations):
             flags = "  !"
@@ -101,7 +151,8 @@ def _print_tree(engine: Engine, derived: dict[str, Derived], roots: list[str]) -
             flags = "  ?"
         width = max(12, 34 - len(indent))
         print(
-            f"{indent}{mark} {node_id:<{width}} {d.readiness:<9} {label}{extra}{flags}"
+            f"{indent}{mark} {node_id:<{width}} {d.readiness:<9} "
+            f"{label}{extra}{ref}{flags}"
         )
         for child in engine.graph.children_of(node_id):
             walk(child, depth + 1)
@@ -117,14 +168,20 @@ def cmd_state(args) -> int:
     cache.save()
 
     if args.node:
+        requested = args.node
+        args.node = _resolve(graph, requested)
+        if args.node is None:
+            return _unknown(graph, requested)
         d = derived[args.node]
         if args.json:
-            _emit(d.as_dict(), True)
+            _emit(_node_json(graph, d), True)
             return 0
         node = graph.get(args.node)
         print(f"{node.id}  ({node.kind})")
         if node.title != node.id:
             print(f"  title      {node.title}")
+        if node.ref:
+            print(f"  ref        {node.ref}")
         print(f"  status     {node.status}")
         print(f"  readiness  {d.readiness}")
         for name, gate in sorted(d.gates.items()):
@@ -151,7 +208,7 @@ def cmd_state(args) -> int:
         _emit(
             {
                 "summary": queries.summary(engine),
-                "nodes": {k: v.as_dict() for k, v in derived.items()},
+                "nodes": {k: _node_json(graph, v) for k, v in derived.items()},
             },
             True,
         )
@@ -159,10 +216,10 @@ def cmd_state(args) -> int:
 
     roots = sorted(n.id for n in graph if not n.parent and n.kind == "work")
     contracts = sorted(n.id for n in graph if n.kind == "contract" and not n.parent)
-    _print_tree(engine, derived, roots)
+    _print_tree(engine, derived, roots, args.ref)
     if contracts:
         print()
-        _print_tree(engine, derived, contracts)
+        _print_tree(engine, derived, contracts, args.ref)
 
     s = queries.summary(engine)
     counts = ", ".join(f"{k}: {v}" for k, v in sorted(s["counts"].items()))
@@ -178,7 +235,7 @@ def cmd_ready(args) -> int:
     items = queries.ready(engine, include_active=args.active)
     cache.save()
     if args.json:
-        _emit([d.as_dict() for d in items], True)
+        _emit([_node_json(graph, d) for d in items], True)
         return 0
     if not items:
         print("nothing is ready - run `trellis explain <node>` to see what is blocking")
@@ -215,9 +272,10 @@ def _print_reasons(reasons: list[queries.Reason], depth: int = 0) -> None:
 def cmd_explain(args) -> int:
     graph, cache, _ = _load(args)
     engine = Engine(graph, cache)
-    if args.node not in graph:
-        print(f"error: unknown node {args.node!r}", file=sys.stderr)
-        return 2
+    requested = args.node
+    args.node = _resolve(graph, requested)
+    if args.node is None:
+        return _unknown(graph, requested)
     d = engine.derived(args.node)
     reasons = queries.explain(engine, args.node, args.gate)
     cache.save()
@@ -278,9 +336,10 @@ def _parse_set(target: str, assignments: list[str]) -> dict[str, dict]:
 
 def cmd_impact(args) -> int:
     graph, cache, graph_dir = _load(args)
-    if args.node not in graph:
-        print(f"error: unknown node {args.node!r}", file=sys.stderr)
-        return 2
+    requested = args.node
+    args.node = _resolve(graph, requested)
+    if args.node is None:
+        return _unknown(graph, requested)
     overlay = _parse_set(args.node, args.set or ["status=done"])
     for node_id in overlay:
         if node_id not in graph:
@@ -490,9 +549,10 @@ def _run_write(args, graph, cache, graph_dir, delta, origin: str, text: str) -> 
 
 def cmd_set(args) -> int:
     graph, cache, graph_dir = _load(args)
-    if args.node not in graph:
-        print(f"error: unknown node {args.node!r}", file=sys.stderr)
-        return 2
+    requested = args.node
+    args.node = _resolve(graph, requested)
+    if args.node is None:
+        return _unknown(graph, requested)
     overlay = _parse_set(args.node, args.assignments)
     changes = [
         delta_mod.ProposedChange(node_id, field, value)
@@ -696,6 +756,7 @@ REMEDIES = {
     "gate_parse_error": "the expression is not valid syntax.",
     "unknown_parent": "parent does not exist.",
     "unknown_implementer": "satisfied_by names a node that does not exist.",
+    "duplicate_ref": "two nodes claim the same external item. Which one is it?",
 }
 
 
@@ -1094,9 +1155,10 @@ def cmd_blocking(args) -> int:
         )
         return 0
 
-    if args.node not in graph:
-        print(f"error: unknown node {args.node!r}", file=sys.stderr)
-        return 2
+    requested = args.node
+    args.node = _resolve(graph, requested)
+    if args.node is None:
+        return _unknown(graph, requested)
     result = queries.blocking(engine, args.node)
     cache.save()
 
@@ -1132,9 +1194,11 @@ def cmd_graph(args) -> int:
     engine = Engine(graph, cache)
     derived = engine.all_derived()
 
-    if args.around and args.around not in graph:
-        print(f"error: unknown node {args.around!r}", file=sys.stderr)
-        return 2
+    if args.around:
+        resolved = _resolve(graph, args.around)
+        if resolved is None:
+            return _unknown(graph, args.around)
+        args.around = resolved
 
     nodes = viz.select(
         graph,
@@ -1253,9 +1317,10 @@ def cmd_snapshot(args) -> int:
 
 def cmd_deps(args) -> int:
     graph, _cache, _ = _load(args)
-    if args.node not in graph:
-        print(f"error: unknown node {args.node!r}", file=sys.stderr)
-        return 2
+    requested = args.node
+    args.node = _resolve(graph, requested)
+    if args.node is None:
+        return _unknown(graph, requested)
     if args.reverse:
         ids = graph.dependents_of(args.node)
         print(f"nodes that depend on {args.node}:")
@@ -1343,6 +1408,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("state", help="derived state of the graph, or of one node")
     p.add_argument("node", nargs="?")
+    p.add_argument("--ref", action="store_true", help="show each node's external id")
     p.set_defaults(func=cmd_state)
 
     p = sub.add_parser("ready", help="work whose start gate is satisfied")

@@ -58,6 +58,22 @@ Readiness (`blocked` / `ready` / `active` / `done` …) is **computed**. Never
 declare it, never try to write it, never tell the user a node is blocked
 without having run the tool.
 
+**`ref:`** is where an external id goes — the ticket, row, or document the rest
+of their world addresses this work by. Optional, opaque, never fetched:
+
+```yaml
+id: safety.d1
+title: External-gate contract v1
+ref: ENG-1552
+status: in_progress
+```
+
+Put the id there, **not in the title**. A title is the field most likely to be
+reworded, and a ref buried in one breaks every join the moment it is. Quote a
+ref that starts with `#`, or YAML reads it as a comment. There is no `owner:`
+field; who work waits on is a tracker's job, and `awaiting:` covers a decision
+being owed.
+
 ## Grammar you will get wrong from memory
 
 Copy from here rather than recalling.
@@ -191,6 +207,11 @@ worse than obviously wrong, because it looks finished.
 So if you extract from documents: extract, annotate honestly as `inferred`,
 then reconcile against the system of record *before* anyone trusts a readiness
 answer. Those three steps are the difference between the two outcomes.
+
+When a node came from a record, put that record's id in `ref:` as you write it.
+It costs nothing at the time and it is what makes the reconciliation pass a
+join rather than a second reading — and reconciliation is the step that catches
+the wrong edges.
 
 ### What they already have decides what to ask
 
