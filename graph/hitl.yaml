@@ -4,7 +4,7 @@ nodes:
     status: in_progress
 
   - id: hitl.proposal_queue
-    ref: "#27"
+    ref: TRE-2  #27"
     title: Propose now, decide later
     parent: hitl
     status: not_started
