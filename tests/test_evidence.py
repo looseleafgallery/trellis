@@ -879,3 +879,38 @@ def test_a_contract_is_never_flagged_as_awaiting_a_decision():
     """Contracts already say this with `unagreed`; two words for it would be worse."""
     graph = build({"id": "c", "kind": "contract", "status": "draft"})
     assert not [p for p in queries.check(graph) if p.code == "awaiting_decision"]
+
+
+# -- ids a gate cannot reach -------------------------------------------------
+
+
+def test_a_hyphenated_id_is_reported_as_unreachable():
+    """`a-b` parses as subtraction, so the reference silently becomes two names."""
+    from trellis.model import is_referenceable
+
+    assert is_referenceable("svc.a_thing")
+    assert not is_referenceable("svc.a-thing")
+    assert not is_referenceable("svc.a thing")
+
+    graph = build({"id": "svc.a-thing", "status": "done"})
+    problems = [p for p in queries.check(graph) if p.code == "unreferenceable_id"]
+    assert len(problems) == 1
+    assert "underscores" in problems[0].message
+
+
+def test_a_reference_that_split_on_a_hyphen_suggests_the_real_node():
+    graph = build(
+        {"id": "svc.a-thing", "status": "done"},
+        {
+            "id": "svc.b",
+            "status": "not_started",
+            "gates": {"start": "svc.a-thing.done"},
+        },
+    )
+    dangling = [p for p in queries.check(graph) if p.code == "dangling_reference"]
+    assert any("did you mean 'svc.a-thing'" in p.message for p in dangling)
+
+
+def test_ordinary_ids_are_not_flagged():
+    graph = build({"id": "agent.tool_exec", "status": "done"})
+    assert not [p for p in queries.check(graph) if p.code == "unreferenceable_id"]

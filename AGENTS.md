@@ -65,6 +65,12 @@ Copy from here rather than recalling.
 **Statuses.** Work: `not_started`, `in_progress`, `done_unverified`, `done`,
 `superseded`, `abandoned`. Contract: `draft`, `proposed`, `agreed`, `frozen`.
 
+**Node ids must be reachable by a gate.** Letters, digits, underscores and
+dots only. Gate expressions are parsed as Python, so `svc.a-thing` reads as a
+subtraction and the reference silently becomes two unknown names. Use
+`svc.a_thing`. `check` reports an unreachable id rather than letting you find
+out that way.
+
 **There is no `depends_on:`.** Edges come from the references inside gate
 expressions. Writing a dependency list does nothing; the loader rejects the
 unknown field.

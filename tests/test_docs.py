@@ -138,3 +138,36 @@ def test_the_version_floor_is_stated_in_one_place_and_agreed_everywhere():
     readme = (ROOT / "README.md").read_text()
     assert f"{floor[0]}.{floor[1]}" in readme, "README does not state the floor"
     assert trellis.__version__
+
+
+def test_every_command_appears_in_the_changelog_or_readme():
+    """The changelog is the only user-facing record of what changed.
+
+    Three entries were silently lost to scripted edits whose anchors had moved,
+    and nothing noticed because no test read it. This is that test.
+    """
+    changelog = (ROOT / "CHANGELOG.md").read_text()
+    readme = (ROOT / "README.md").read_text()
+    parser = cli.build_parser()
+    commands = set(
+        next(
+            action.choices
+            for action in parser._subparsers._group_actions
+            if action.choices
+        )
+    )
+    undocumented = [
+        name
+        for name in sorted(commands)
+        if f"`trellis {name}" not in changelog and f"`trellis {name}" not in readme
+    ]
+    assert not undocumented, (
+        f"commands missing from both CHANGELOG and README: {undocumented}"
+    )
+
+
+def test_the_changelog_has_an_unreleased_section_with_content():
+    text = (ROOT / "CHANGELOG.md").read_text()
+    unreleased = text.split("## [Unreleased]", 1)[1].split("\n## ", 1)[0]
+    assert unreleased.strip(), "the Unreleased section is empty"
+    assert "- " in unreleased, "the Unreleased section lists nothing"

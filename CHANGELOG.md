@@ -52,6 +52,15 @@ expensive to break.
 
 ### Fixed
 
+- Every command that reads derived state crashed with a traceback on a graph
+  containing a cycle. `ready`, `doctor`, `trust`, `blocking`, `graph`,
+  `explain`, `stats`, `snapshot` and `set` now report the cycle and point at
+  `check`, which is the command that explains it.
+- A node id containing anything but letters, digits, underscores and dots
+  cannot be referenced by a gate, because expressions are parsed as Python and
+  `a-b` reads as subtraction. `check` now says so, and a reference that split
+  on one suggests the node it meant.
+
 - Cycles caused by gating on your own ancestor's published fact, or by an
   implementer gating on the contract it satisfies, now name the mistake and the
   fix rather than only the topology (#11, #12).

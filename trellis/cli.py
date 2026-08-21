@@ -113,11 +113,7 @@ def _print_tree(engine: Engine, derived: dict[str, Derived], roots: list[str]) -
 def cmd_state(args) -> int:
     graph, cache, _ = _load(args)
     engine = Engine(graph, cache)
-    try:
-        derived = engine.all_derived()
-    except CycleError as exc:
-        print(f"error: {exc}\nrun `trellis check` for details", file=sys.stderr)
-        return 2
+    derived = engine.all_derived()
     cache.save()
 
     if args.node:
@@ -672,6 +668,7 @@ REMEDIES = {
     "dead_acknowledgement": "this finding no longer fires - drop the acknowledge entry.",
     "cycle": "these depend on each other. One of the edges is wrong.",
     "dangling_reference": "names a node that does not exist. Typo, or not modelled yet?",
+    "unreferenceable_id": "rename it with underscores; gates cannot reach it as it is.",
     "dangling_evidence": "evidence names a node that does not exist.",
     "self_reference": "a node cannot gate on itself.",
     "gate_error": "the expression does not evaluate - check the export names.",
@@ -1475,6 +1472,17 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
+    except CycleError as exc:
+        # Every command that reads derived state hits this, so it is handled
+        # once here rather than in each. Derived state is undefined until the
+        # cycle is cut, and `check` is the command that explains the shape.
+        print(
+            f"error: {exc}\n"
+            "derived state is undefined until that is cut. "
+            "run `trellis check` - it names the cause when it recognises the shape.",
+            file=sys.stderr,
+        )
+        return 2
     except (ModelError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
