@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from . import expr as expr_mod
+from . import journal
 from .cache import Cache
 from .engine import CycleError, Derived, Engine
 from .model import Graph, is_referenceable, node_from_dict
@@ -25,6 +26,7 @@ URGENCY = {
     "cycle_known_shape": 0,
     "dangling_reference": 0,
     "dangling_evidence": 0,
+    "legacy_journal": 2,
     "unreferenceable_id": 0,
     "self_reference": 0,
     "gate_parse_error": 0,
@@ -258,26 +260,28 @@ def dead_acknowledgements(graph: Graph, problems: list[Problem]) -> list[Problem
     return out
 
 
-def check(graph: Graph, engine: Engine | None = None) -> list[Problem]:
+def check(graph: Graph, engine: Engine | None = None, graph_dir=None) -> list[Problem]:
     """Findings worth showing: ranked, with acknowledged ones removed."""
-    kept, _muted = check_with_muted(graph, engine)
+    kept, _muted = check_with_muted(graph, engine, graph_dir)
     return kept
 
 
 def check_with_muted(
-    graph: Graph, engine: Engine | None = None
+    graph: Graph, engine: Engine | None = None, graph_dir=None
 ) -> tuple[list[Problem], int]:
     """As `check`, and also how many findings were acknowledged away.
 
     Callers that display results want both numbers: filtering silently would
     make an acknowledgement indistinguishable from a bug.
     """
-    problems = collect(graph, engine)
+    problems = collect(graph, engine, graph_dir)
     kept, muted = acknowledged(graph, problems)
     return rank(kept), muted
 
 
-def collect(graph: Graph, engine: Engine | None = None) -> list[Problem]:
+def collect(
+    graph: Graph, engine: Engine | None = None, graph_dir=None
+) -> list[Problem]:
     """Every finding, unranked and unfiltered."""
     problems: list[Problem] = []
 
@@ -415,6 +419,21 @@ def collect(graph: Graph, engine: Engine | None = None) -> list[Problem]:
                     "dots reads as an operator. Use underscores instead",
                 )
             )
+
+    legacy = journal.legacy_journal_path(graph_dir) if graph_dir else None
+    if legacy is not None and legacy.exists():
+        problems.append(
+            Problem(
+                "legacy_journal",
+                "warn",
+                # Not about any one node; naming it keeps the output aligned.
+                "(graph)",
+                f"the journal is still in {journal.LEGACY_DIRNAME}/, which is "
+                f"normally gitignored - so every recorded reason is local to this "
+                f"machine. Move it: git mv {journal.LEGACY_DIRNAME}/"
+                f"{journal.JOURNAL_NAME} {journal.HISTORY_DIRNAME}/",
+            )
+        )
 
     cycles = find_cycles(graph)
     cycle_members: set[str] = set()

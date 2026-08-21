@@ -41,6 +41,13 @@ expensive to break.
 
 ### Changed
 
+- The journal moved from `.trellis/` to `history/`, which is committed. It is
+  the only copy of why anything changed, and `.trellis/` is normally
+  gitignored, so every recorded reason was local to one machine. The cache
+  stays in `.trellis/` and stays ignored. A journal in the old place is still
+  read and `check` reports the move to make; a graph with no journal now says
+  so instead of quietly answering a weaker question.
+
 - `AGENTS.md` bootstrapping guidance rewritten around three starting conditions
   (blank page, tracker only, tracker plus documents), which need the interview
   questions in near-opposite proportions. Adds the measured rule that edges

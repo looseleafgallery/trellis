@@ -19,10 +19,30 @@ from .loader import project_root
 from .model import Graph, is_retreat
 
 JOURNAL_NAME = "journal.jsonl"
+HISTORY_DIRNAME = "history"
+# Where the journal used to live, back when durable history and a disposable
+# cache shared a directory because they were written at the same afternoon
+# rather than because they are the same kind of thing.
+LEGACY_DIRNAME = ".trellis"
 
 
 def journal_path(graph_dir: str | Path) -> Path:
-    return project_root(graph_dir) / ".trellis" / JOURNAL_NAME
+    """Where the journal is written. Committed, on purpose.
+
+    The journal is the only copy of *why* — the reason on every correction,
+    what was acknowledged and what for, and the baseline `drift` compares
+    against. None of that is recoverable from the YAML or from git, so it
+    cannot live somewhere that never leaves one machine.
+    """
+    return project_root(graph_dir) / HISTORY_DIRNAME / JOURNAL_NAME
+
+
+def legacy_journal_path(graph_dir: str | Path) -> Path:
+    return project_root(graph_dir) / LEGACY_DIRNAME / JOURNAL_NAME
+
+
+def has_journal(graph_dir: str | Path) -> bool:
+    return journal_path(graph_dir).exists() or legacy_journal_path(graph_dir).exists()
 
 
 def record(
@@ -49,9 +69,7 @@ def record(
     return path
 
 
-def read(graph_dir: str | Path, limit: int | None = None) -> list[dict]:
-    """Most recent entries last. Malformed lines are skipped, not fatal."""
-    path = journal_path(graph_dir)
+def _read_one(path: Path) -> list[dict]:
     if not path.exists():
         return []
     entries: list[dict] = []
@@ -63,6 +81,20 @@ def read(graph_dir: str | Path, limit: int | None = None) -> list[dict]:
             entries.append(json.loads(line))
         except json.JSONDecodeError:
             continue
+    return entries
+
+
+def read(graph_dir: str | Path, limit: int | None = None) -> list[dict]:
+    """Most recent entries last. Malformed lines are skipped, not fatal.
+
+    Reads the old location as well as the current one, so moving the file is
+    something you do when you get to it rather than something that silently
+    loses the reasons you already recorded. Legacy entries come first: they
+    predate the new file by construction.
+    """
+    entries = _read_one(legacy_journal_path(graph_dir)) + _read_one(
+        journal_path(graph_dir)
+    )
     return entries[-limit:] if limit else entries
 
 

@@ -1176,3 +1176,74 @@ def test_the_cache_and_snapshots_follow_the_same_root(project, monkeypatch):
     inside = snapshot_mod.snapshot_dir(".")
     monkeypatch.chdir(project.parent)
     assert inside == snapshot_mod.snapshot_dir("graph")
+
+
+# -- the journal is durable, the cache is not --------------------------------
+
+
+def test_the_journal_is_written_somewhere_committable(project, monkeypatch):
+    monkeypatch.chdir(project.parent)
+    cli.main(["--graph", "graph", "set", "a", "status=done", "-y"])
+
+    assert (project.parent / "history" / "journal.jsonl").exists()
+    assert not (project.parent / ".trellis" / "journal.jsonl").exists()
+
+
+def test_the_cache_stays_out_of_the_way(project, monkeypatch):
+    """Derived and disposable; it must not follow the journal into git."""
+    monkeypatch.chdir(project.parent)
+    cli.main(["--graph", "graph", "state"])
+    assert (project.parent / ".trellis" / "cache.json").exists()
+
+
+def test_a_journal_in_the_old_place_is_still_read(project):
+    """Moving the file is something you do when you get to it."""
+    legacy = journal.legacy_journal_path(project)
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text(
+        '{"at": "2026-01-01T00:00:00+00:00", "origin": "set", "text": "old",'
+        ' "reason": "recorded before the move", "writes": []}\n'
+    )
+    entries = journal.read(project)
+    assert [e["reason"] for e in entries] == ["recorded before the move"]
+
+
+def test_old_and_new_entries_read_as_one_history(project, monkeypatch):
+    legacy = journal.legacy_journal_path(project)
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text(
+        '{"at": "2026-01-01T00:00:00+00:00", "origin": "set", "text": "old",'
+        ' "reason": "before", "writes": []}\n'
+    )
+    monkeypatch.chdir(project.parent)
+    cli.main(
+        ["--graph", "graph", "set", "a", "status=done", "-y", "--because", "after"]
+    )
+    assert [e["reason"] for e in journal.read(project)] == ["before", "after"]
+
+
+def test_a_journal_left_in_the_old_place_is_reported(project, capsys):
+    legacy = journal.legacy_journal_path(project)
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text("")
+
+    cli.main(["--graph", str(project), "check"])
+    out = capsys.readouterr().out
+    assert "still in .trellis/" in out
+    assert "git mv" in out
+
+
+def test_no_journal_is_said_out_loud_rather_than_quietly_degraded(project, capsys):
+    """`trust` answers a weaker question without one; it should not hide that."""
+    assert not journal.has_journal(project)
+    cli.main(["--graph", str(project), "trust"])
+    out = capsys.readouterr().out
+    assert "no journal for this graph" in out
+    assert "drift has no baseline" in out
+
+
+def test_once_there_is_a_journal_the_warning_stops(project, capsys):
+    cli.main(["--graph", str(project), "set", "a", "status=done", "-y"])
+    capsys.readouterr()
+    cli.main(["--graph", str(project), "trust"])
+    assert "no journal for this graph" not in capsys.readouterr().out

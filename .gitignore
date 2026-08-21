@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
 .venv/
+# Derived and disposable: the evaluation cache, recomputed on demand.
+# Durable history lives in history/ and is committed - it is the only copy of
+# why anything changed.
 .trellis/
 *.egg-info/
 .pytest_cache/
