@@ -37,6 +37,61 @@ by the suite, and the commands, statuses, exports, and provenance values they
 name are checked against the code. If you change the schema, those tests tell
 you which prose went stale.
 
+## Lessons that cost us something
+
+Working on this repository has produced findings that are not bugs, not
+features, and not invariants — just things that were learned expensively and
+would otherwise be relearned. They live here because a lesson with no home is
+a second place to be wrong, which is the failure this project exists to
+prevent.
+
+Add to this when a session teaches you something rather than changes something.
+Keep each entry to what was actually observed and what to do instead.
+
+**A scripted edit that matches nothing fails silently.** Three CHANGELOG
+entries and two whole README sections were never written, because
+`s.replace(old, new)` found no anchor and reported nothing. CI stayed green
+throughout — no test read those files. `drift` shipped undocumented across four
+merges. *Assert the anchor before replacing, and prefer editing a file you have
+just read.*
+
+**Green output is not a green run.** `ruff check` was passed through `tail -1`,
+which showed a trailing "no fixes available" line and hid the error above it.
+*Read the whole output of a check, or read its exit code — not its last line.*
+
+**A tool's own diagnostics can be as wrong as a user's declaration.** `trust`
+reported "not in git, or never committed" from a lookup that could not have
+succeeded; `drift` reported "trellis has not written any status yet" when it
+had only not written *where it looked*. Both read as facts about the user's
+repository rather than facts about where we looked. *State what was checked. If
+two causes are distinguishable, distinguish them; if they are not, say the
+cause is unknown.*
+
+**Absence of evidence is reported far too easily.** The above is one instance
+of a general shape, and it is worth checking any new message against it before
+merging.
+
+**`git` reports "No signature" when it means "cannot verify".** `%G?` returns
+`N` without `gpg.ssh.allowedSignersFile`, whether or not a signature exists.
+*Check `git cat-file commit <sha>` for a `gpgsig` header before concluding
+anything was unsigned.*
+
+**A merged PR's `mergeable` field is meaningless.** GitHub computes it lazily
+and stops maintaining it once a PR closes, so it reads `UNKNOWN` forever.
+*`git merge-tree --write-tree origin/main <branch>` answers the real question
+locally.*
+
+**This repository may not be yours alone.** Uncommitted work belonging to
+someone else was carried across three branches by ordinary `git checkout`.
+Nothing was lost, but `git add -A` at any point would have swept it into an
+unrelated commit. *Check `git status` before switching branches, and never
+stage with `-A` when you did not write everything in the tree.*
+
+**Do not override the committer identity.** Commits were made with an email
+that was not the one the signing key is bound to, so GitHub reported
+`unknown_key` and every commit showed as unverified. The repository's own
+config is the source of truth for authorship. *Use plain `git commit`.*
+
 ## Tests
 
 New behaviour needs a test that fails without it. Tests that assert on real
