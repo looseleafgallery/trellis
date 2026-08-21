@@ -1,0 +1,57 @@
+nodes:
+  - id: trust
+    title: Being reliably suspicious
+    status: in_progress
+    publishes:
+      history_is_shared: contract.durable_state_home.live
+    notes: >
+      The retrospective's first read: be the thing that catches you, not the
+      thing that replaces you. This is where the roadmap is deliberately
+      concentrated.
+
+  - id: trust.journal_home
+    title: Make the why survive a clone
+    parent: trust
+    status: not_started
+    awaiting: whether the journal is committed, moved, or documented as local
+    gates:
+      start: contract.durable_state_home.agreed
+    provides: [shared-history]
+    evidence:
+      contract.durable_state_home: stated
+    notes: >
+      #28. Nobody has hit this because the tool has been used from one working
+      copy. It bites the first time two people share a graph.
+
+  - id: trust.calibration
+    title: Report how often unconfirmed edges were wrong
+    parent: trust
+    status: not_started
+    gates:
+      start: contract.reconcile_outcome.live
+    evidence:
+      contract.reconcile_outcome: stated
+    notes: >
+      #19. Measured once already: 2 of 7 unconfirmed edges were wrong, 0 of 29
+      verified ones were. The number is the product's proof.
+
+  - id: trust.external_grounding
+    title: Challenge a declaration with branch and PR state
+    parent: trust
+    status: not_started
+    provides: [repo-evidence]
+    notes: >
+      #4. Two signals, both challenge-only. Deliberately not a full
+      integration - the value is in the challenge, not the coverage.
+
+  - id: trust.structural_critique
+    title: Co-movement and fan-in
+    parent: trust
+    status: not_started
+    gates:
+      start: has(trust.journal_home, "shared-history")
+    evidence:
+      trust.journal_home: inferred
+    notes: >
+      #5. Co-movement reads the journal's history, so it needs the journal to
+      be a thing that persists. That edge is inferred, not confirmed.

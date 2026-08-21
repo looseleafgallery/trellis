@@ -1,0 +1,18 @@
+nodes:
+  - id: hitl
+    title: Where a person makes the call
+    status: in_progress
+
+  - id: hitl.proposal_queue
+    title: Propose now, decide later
+    parent: hitl
+    status: not_started
+    gates:
+      start: contract.durable_state_home.live
+      finish: contract.reconcile_outcome.agreed
+    evidence:
+      contract.durable_state_home: stated
+      contract.reconcile_outcome: inferred
+    notes: >
+      #27. Startable once state has a home; not finishable until accept and
+      reject record their outcome the same way calibration does.

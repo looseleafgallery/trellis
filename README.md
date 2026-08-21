@@ -292,6 +292,22 @@ Every applied change is appended to `.trellis/journal.jsonl` with the sentence
 that produced it. The YAML holds current state and git holds the diffs; neither
 holds the *why*.
 
+## trellis uses trellis
+
+`graph/` at the root of this repository is trellis's own roadmap, modelled with
+the procedure in `AGENTS.md` and held to its own rules — contracts first, stop
+at about eight nodes, annotate provenance honestly.
+
+```bash
+trellis doctor      # from the repo root
+trellis blocking --all
+```
+
+It disagrees with its author, which is the test `AGENTS.md` sets for a
+bootstrap. Two nodes are flagged `inert_node` and are genuinely independent
+work; whether to acknowledge that is a call for whoever owns them, not for
+whoever wrote the file.
+
 ## Bootstrapping, and agents
 
 There is no `trellis init` wizard. The hard part of starting a graph is the
