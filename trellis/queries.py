@@ -15,6 +15,44 @@ from .cache import Cache
 from .engine import CycleError, Derived, Engine
 from .model import Graph, node_from_dict
 
+# How urgently a finding wants attention, within its severity. Severity says
+# how bad it is; this says what to do first. Fourteen findings ranked only by
+# severity and then alphabetically is a list you skim rather than act on.
+URGENCY = {
+    # Nothing else can be trusted until these are gone: they stop the graph
+    # from evaluating at all.
+    "cycle": 0,
+    "cycle_known_shape": 0,
+    "dangling_reference": 0,
+    "dangling_evidence": 0,
+    "self_reference": 0,
+    "gate_parse_error": 0,
+    "unknown_parent": 0,
+    "unknown_implementer": 0,
+    # Expressions that exist but do not evaluate.
+    "gate_error": 1,
+    "publish_error": 1,
+    # The declaration contradicts itself.
+    "gate_bypassed": 2,
+    "parent_ahead_of_children": 2,
+    "frozen_unimplemented": 2,
+    # Something real is waiting on somebody.
+    "undrafted_contract": 3,
+    "unimplemented_contract": 3,
+    "working_ahead": 3,
+    "depends_on_abandoned": 3,
+    # Modelling smells: true, but nothing is stuck because of them.
+    "reaches_inside": 4,
+    "dead_evidence": 4,
+    "unconsumed_contract": 4,
+    "orphan_contract": 4,
+    "rollup_lagging": 5,
+    "inert_node": 5,
+    "unowned_node": 5,
+}
+SEVERITY_ORDER = {"error": 0, "warn": 1, "info": 2}
+DEFAULT_URGENCY = 3
+
 
 @dataclass
 class Problem:
@@ -22,6 +60,15 @@ class Problem:
     severity: str
     node: str
     message: str
+
+    @property
+    def rank(self) -> tuple[int, int, str]:
+        """Sort key: how bad, then what to fix first, then stable by node."""
+        return (
+            SEVERITY_ORDER.get(self.severity, 3),
+            URGENCY.get(self.code, DEFAULT_URGENCY),
+            self.node,
+        )
 
     def as_dict(self) -> dict:
         return {
@@ -146,8 +193,90 @@ def explain_cycle(graph: Graph, cycle: list[str]) -> str | None:
     return None
 
 
+def rank(problems: list[Problem]) -> list[Problem]:
+    """Most urgent first, so the top line is the one to act on."""
+    return sorted(problems, key=lambda p: p.rank)
+
+
+def acknowledged(graph: Graph, problems: list[Problem]) -> tuple[list[Problem], int]:
+    """Split findings a node has already answered for good from the rest.
+
+    Suppressed findings are counted and reported, never silently dropped —
+    an acknowledgement you cannot see is indistinguishable from a bug.
+    """
+    kept, muted = [], 0
+    for problem in problems:
+        node = graph.nodes.get(problem.node)
+        # Errors are not acknowledgeable. An observation that is true and
+        # permanent is worth answering for good; a graph that cannot evaluate
+        # is a defect, and letting it be dismissed would cost the property the
+        # whole tool rests on — that it fails loudly.
+        if (
+            problem.severity != "error"
+            and node is not None
+            and node.acknowledges(problem.code)
+        ):
+            muted += 1
+        else:
+            kept.append(problem)
+    return kept, muted
+
+
+def dead_acknowledgements(graph: Graph, problems: list[Problem]) -> list[Problem]:
+    """Acknowledgements for findings that no longer fire.
+
+    Same idea as `dead_evidence`: an answer to a question nobody is asking any
+    more is worth removing, and nothing else would ever tell you.
+    """
+    firing = {(p.node, p.code) for p in problems}
+    unacknowledgeable = {p.code for p in problems if p.severity == "error"}
+    out = []
+    for node in graph:
+        for code in node.acknowledge:
+            if code in unacknowledgeable:
+                out.append(
+                    Problem(
+                        "unacknowledgeable",
+                        "warn",
+                        node.id,
+                        f"acknowledges {code!r}, but that is reported as an error - "
+                        f"errors are defects, not opinions, and cannot be silenced",
+                    )
+                )
+            elif (node.id, code) not in firing:
+                out.append(
+                    Problem(
+                        "dead_acknowledgement",
+                        "info",
+                        node.id,
+                        f"acknowledges {code!r}, which no longer fires here - "
+                        f"the acknowledgement can go",
+                    )
+                )
+    return out
+
+
 def check(graph: Graph, engine: Engine | None = None) -> list[Problem]:
-    """Structural validation plus every derived violation in the graph."""
+    """Findings worth showing: ranked, with acknowledged ones removed."""
+    kept, _muted = check_with_muted(graph, engine)
+    return kept
+
+
+def check_with_muted(
+    graph: Graph, engine: Engine | None = None
+) -> tuple[list[Problem], int]:
+    """As `check`, and also how many findings were acknowledged away.
+
+    Callers that display results want both numbers: filtering silently would
+    make an acknowledgement indistinguishable from a bug.
+    """
+    problems = collect(graph, engine)
+    kept, muted = acknowledged(graph, problems)
+    return rank(kept), muted
+
+
+def collect(graph: Graph, engine: Engine | None = None) -> list[Problem]:
+    """Every finding, unranked and unfiltered."""
     problems: list[Problem] = []
 
     for node in graph:
@@ -375,6 +504,7 @@ def check(graph: Graph, engine: Engine | None = None) -> list[Problem]:
                     violation["message"],
                 )
             )
+    problems += dead_acknowledgements(graph, problems)
     return problems
 
 
@@ -759,6 +889,7 @@ __all__ = [
     "Impact",
     "Problem",
     "Reason",
+    "acknowledged",
     "ancestors_of",
     "check",
     "explain",

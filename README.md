@@ -357,6 +357,35 @@ resolution. And volatility is not classified at all below four nodes with
 history: an outlier needs a baseline to be an outlier against, and in a tiny
 graph the churning node dominates its own median.
 
+### Answering a finding for good
+
+Some findings are true and will stay true. Two spike-only projects that
+genuinely have no relationships will be reported as `inert_node` on every run,
+and a signal that fires forever is how a whole severity gets tuned out.
+
+```yaml
+id: spike
+status: in_progress
+acknowledge: [inert_node]
+```
+
+Acknowledged findings are **counted, not hidden** — `check` reports
+`2 acknowledged and not shown`, because an acknowledgement you cannot see is
+indistinguishable from a bug. If an acknowledged finding stops firing, that is
+reported too, so a stale one can be removed.
+
+**Errors cannot be acknowledged.** A dangling reference or a cycle is a defect,
+not an opinion, and a graph that cannot evaluate must not be able to look
+clean. Acknowledging an error code is itself reported.
+
+Findings are ranked by what to fix first, not just by severity, and `check`
+ends by naming one:
+
+```
+start with: sys.b - dangling_reference
+  -> names a node that does not exist. Typo, or not modelled yet?
+```
+
 ### Edge provenance
 
 An edge checked against a system of record and one read out of a prose sentence

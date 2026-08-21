@@ -137,6 +137,10 @@ class Node:
     publishes: tuple[tuple[str, object], ...] = ()
     # Provenance for this node's outgoing edges, keyed by referenced node.
     evidence: tuple[EdgeEvidence, ...] = ()
+    # Findings this node has answered for good. An accurate observation that
+    # will never change is noise on the second run, and noise is how a whole
+    # severity gets ignored. Acknowledged findings are counted, never hidden.
+    acknowledge: tuple[str, ...] = ()
     notes: str = ""
     # Where this came from. Deliberately excluded from the fingerprint.
     source: str = ""
@@ -156,10 +160,14 @@ class Node:
     def evidence_map(self) -> dict[str, EdgeEvidence]:
         return {e.target: e for e in self.evidence}
 
+    def acknowledges(self, code: str) -> bool:
+        return code in self.acknowledge
+
     def fingerprint(self) -> str:
         """Hash of the semantic declared fields.
 
-        Excludes `title`, `notes`, `source`, and `evidence`: none of them can
+        Excludes `title`, `notes`, `source`, `evidence`, and `acknowledge`: none
+        of them can
         change a derived value. Provenance in particular affects only how a
         result is *reported*, so annotating an edge must not invalidate a cache
         entry — otherwise nobody would annotate anything.
@@ -195,6 +203,7 @@ def node_from_dict(data: dict, source: str = "") -> Node:
         "satisfied_by",
         "publishes",
         "evidence",
+        "acknowledge",
         "notes",
     }
     if unknown:
@@ -273,6 +282,13 @@ def node_from_dict(data: dict, source: str = "") -> Node:
         edge_evidence.append(EdgeEvidence(target=str(target), how=how, at=at))
     edge_evidence_t = tuple(sorted(edge_evidence, key=lambda e: e.target))
 
+    raw_ack = data.get("acknowledge") or []
+    if isinstance(raw_ack, str):
+        raw_ack = [raw_ack]
+    if not isinstance(raw_ack, list):
+        raise ModelError(f"{node_id}: `acknowledge` must be a list of finding codes")
+    acknowledge = tuple(sorted(str(a) for a in raw_ack))
+
     provides = tuple(sorted(str(p) for p in (data.get("provides") or [])))
     satisfied_by = tuple(sorted(str(s) for s in (data.get("satisfied_by") or [])))
 
@@ -294,6 +310,7 @@ def node_from_dict(data: dict, source: str = "") -> Node:
         satisfied_by=satisfied_by,
         publishes=publishes,
         evidence=edge_evidence_t,
+        acknowledge=acknowledge,
         notes=str(data.get("notes") or ""),
         source=source,
     )
@@ -443,6 +460,7 @@ class Graph:
                 "evidence": {
                     e.target: {"how": e.how, "at": e.at} for e in base.evidence
                 },
+                "acknowledge": list(base.acknowledge),
                 "notes": base.notes,
             }
             if base.kind == "work":

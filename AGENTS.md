@@ -216,7 +216,20 @@ that is the most useful sentence in the whole session.
   confirmed.
 - `trellis drift` — has anything been changed around the tool since it last
   wrote? Worth running at the start of a session.
-- `trellis doctor` — run this more often than you think.
+- `trellis doctor` — run this more often than you think. Findings come ranked;
+  the first one is the one to act on.
+
+If a finding is true and will stay true — a spike with no relationships, say —
+answer it for good on the node rather than re-reading it every run:
+
+```yaml
+acknowledge: [inert_node]
+```
+
+Acknowledged findings are counted, never hidden, and errors cannot be
+acknowledged at all. **Never acknowledge a finding on the user'"'"'s behalf without
+asking.** Silencing a true objection is the one edit that makes this tool worse
+than not having it.
 
 **Never edit the YAML directly to change a status.** Use `set`, so the change is
 previewed, verified, and journaled with the reason. Direct edits are for
