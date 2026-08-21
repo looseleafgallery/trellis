@@ -6,10 +6,16 @@ nodes:
   - id: contract.durable_state_home
     title: Where durable coordination state lives
     kind: contract
-    status: draft
-    version: 0
+    status: agreed
+    version: 1
+    satisfied_by: [trust.journal_home]
     notes: >
-      The journal is in .trellis/, which is gitignored, so correction reasons
+      Settled: durable and derived are split. The journal is committed in
+      history/; the cache stays in .trellis/ and stays ignored. Implemented in
+      #34, which also made a graph with no journal say so rather than quietly
+      answering a weaker question.
+
+      Originally: the journal is in .trellis/, which is gitignored, so correction reasons
       and the drift baseline never leave one machine. A proposal awaiting a
       human decision is a handoff between two parties, so it cannot live
       somewhere the other party cannot see. Both questions are the same
@@ -21,6 +27,7 @@ nodes:
     kind: contract
     status: draft
     version: 0
+    satisfied_by: [trust.reconcile_loop]
     notes: >
       Calibration needs to know whether a checked edge held or was wrong. The
       wrong case usually deletes the evidence of its own failure, so the

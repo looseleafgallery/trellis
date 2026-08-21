@@ -59,6 +59,11 @@ expensive to break.
 
 ### Fixed
 
+- Tests no longer inherit the machine's global git config. On a machine with
+  commit signing enforced, eleven fixtures errored before asserting anything
+  and named gpg rather than the fixture, so a contributor's first `pytest`
+  looked like their own git setup was broken.
+
 - `file_history` passed a relative pathspec to `git -C <graph_dir>`, so the
   path was resolved twice — `--graph graph` from a project root asked git for
   `graph/graph`, matched nothing, and silently reported every node as having no
