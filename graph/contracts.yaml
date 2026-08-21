@@ -25,8 +25,8 @@ nodes:
   - id: contract.reconcile_outcome
     title: How the outcome of checking an edge is recorded
     kind: contract
-    status: draft
-    version: 0
+    status: agreed
+    version: 1
     satisfied_by: [trust.reconcile_loop]
     notes: >
       Calibration needs to know whether a checked edge held or was wrong. The
