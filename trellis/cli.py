@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -815,11 +816,37 @@ def cmd_stats(args) -> int:
 # -- entry point ------------------------------------------------------------
 
 
+def _version() -> str:
+    """Package version, plus the commit when running from a checkout.
+
+    Installs come from git, so "the version" is whatever main was at the time.
+    A bare version number would not identify a build well enough to act on a
+    bug report.
+    """
+    from . import __version__
+
+    here = Path(__file__).resolve().parent
+    sha = None
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(here), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            sha = result.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return f"trellis {__version__}" + (f" ({sha})" if sha else "")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="trellis",
         description="Compute project state from a graph of work and gates.",
     )
+    parser.add_argument("--version", action="version", version=_version())
     parser.add_argument("--graph", help="path to the graph/ directory")
     parser.add_argument(
         "--no-cache", action="store_true", help="ignore the on-disk cache"

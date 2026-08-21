@@ -10,11 +10,26 @@ full evaluation of a graph this size is sub-millisecond. One optional command
 (`trellis log`) puts a model in front of it to turn a sentence into a proposed
 change, but the model only ever proposes: every consequence is still computed.
 
+```bash
+pip install git+https://github.com/looseleafgallery/trellis.git
 ```
-pip install -e '.[dev]'
-cd examples/agent-loop
+
+Or `pipx install git+https://github.com/looseleafgallery/trellis.git` for a
+global `trellis` command. There is no `pip install trellis`: that name belongs
+to an unrelated project on PyPI. The command, the import, and the tool are all
+`trellis` regardless.
+
+Then try it against the shipped example:
+
+```bash
+git clone https://github.com/looseleafgallery/trellis.git
+cd trellis/examples/agent-loop
 trellis state
+trellis explain agent.emit
+trellis doctor
 ```
+
+Contributors: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## The model
 

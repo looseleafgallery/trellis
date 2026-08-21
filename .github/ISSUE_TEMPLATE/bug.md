@@ -15,4 +15,4 @@ trellis ...
 **The relevant part of your graph**, if you can share it — even a reduced
 version. `trellis doctor --json` output is useful too.
 
-**Version**: commit sha or `pip show trellis`
+**Version**: output of `trellis --version`

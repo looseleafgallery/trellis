@@ -99,3 +99,21 @@ def test_agents_md_names_every_provenance_value():
     text = (ROOT / "AGENTS.md").read_text()
     for how in HOW:
         assert f"`{how}`" in text
+
+
+def test_version_reports_something_actionable():
+    """Installs come from git, so a bare version number would not identify a build."""
+    from trellis import __version__
+    from trellis.cli import _version
+
+    reported = _version()
+    assert __version__ in reported
+    assert reported.startswith("trellis ")
+
+
+def test_readme_gives_the_user_install_not_the_contributor_one():
+    text = (ROOT / "README.md").read_text()
+    assert "pip install git+https://github.com/looseleafgallery/trellis.git" in text
+    # `trellis` on PyPI belongs to an unrelated project; saying so avoids a
+    # confusing failure for anyone who tries the obvious thing.
+    assert "no `pip install trellis`" in text
