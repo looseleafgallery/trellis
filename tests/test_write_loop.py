@@ -6,6 +6,7 @@ are deterministic. What a real model returns for a given sentence is a prompt
 question, not a code question.
 """
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -814,3 +815,206 @@ def test_doctor_reports_an_unrecorded_correction_as_a_warning(workspace, capsys)
     out = capsys.readouterr().out
     assert "outside trellis" in out
     assert "its reason is gone" in out
+
+
+# -- the review loop ---------------------------------------------------------
+
+
+@pytest.fixture
+def answers(monkeypatch):
+    """Script the interactive prompts, and pretend we are on a terminal."""
+
+    def scripted(*responses):
+        queue = list(responses)
+
+        def fake_input(_prompt=""):
+            if not queue:
+                raise EOFError
+            return queue.pop(0)
+
+        monkeypatch.setattr("builtins.input", fake_input)
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+    return scripted
+
+
+def test_review_refuses_when_not_a_terminal(workspace, capsys):
+    code = cli.main(["--graph", str(workspace), "review"])
+    assert code == 2
+    assert "review is interactive" in capsys.readouterr().err
+
+
+def test_review_acknowledges_and_records_why(tmp_path, answers, capsys):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n  - id: spike\n    title: Spike\n    status: in_progress\n"
+    )
+    answers("a", "spike-only by design", "q")
+
+    assert cli.main(["--graph", str(graph_dir), "review"]) == 0
+    node = load_graph(graph_dir).get("spike")
+    assert node.acknowledges("inert_node")
+
+    entry = journal.read(graph_dir)[-1]
+    assert entry["origin"] == "acknowledge"
+    assert entry["reason"] == "spike-only by design"
+    assert "acknowledged" in capsys.readouterr().out
+
+
+def test_review_cannot_acknowledge_an_error(tmp_path, answers, capsys):
+    """Errors are defects, not opinions - the option is not even offered."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "id: a\nstatus: not_started\ngates: {start: ghost.done}\n"
+    )
+    answers("a", "q")
+
+    cli.main(["--graph", str(graph_dir), "review"])
+    out = capsys.readouterr().out
+    assert "[a] acknowledge" not in out
+    assert "not one of the options" in out
+    assert not load_graph(graph_dir).get("a").acknowledge
+
+
+def test_review_applies_a_direct_fix_through_the_normal_write_path(
+    tmp_path, answers, capsys
+):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: p\n    title: Parent\n    status: in_progress\n"
+        "  - id: p.a\n    title: Child\n    parent: p\n    status: done\n"
+    )
+    # the finding is rollup_lagging on `p`: every child is done
+    answers("f", "y", "q")
+
+    cli.main(["--graph", str(graph_dir), "review"])
+    assert load_graph(graph_dir).get("p").status == "done"
+    # it went through the preview, not around it
+    assert "proposed:" in capsys.readouterr().out
+
+
+def test_review_explain_does_not_consume_the_finding(tmp_path, answers, capsys):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: c\n    kind: contract\n    status: draft\n    title: A contract\n"
+        "  - id: u\n    title: User\n    status: not_started\n"
+        "    gates: {start: c.live}\n"
+    )
+    answers("x", "s", "q")
+
+    cli.main(["--graph", str(graph_dir), "review"])
+    out = capsys.readouterr().out
+    # explain returned to the same finding rather than advancing
+    assert out.count("[1/") == 1
+    assert "[2/" in out  # skip advanced it
+
+
+def test_review_reloads_after_a_change(tmp_path, answers):
+    """A write makes every later finding stale, so the graph is re-read.
+
+    Both children are parented, so `inert_node` is the only finding each has —
+    keeping the ordering unambiguous.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: p\n    title: Parent\n    status: in_progress\n"
+        "  - id: p.one\n    title: One\n    parent: p\n    status: in_progress\n"
+        "  - id: p.two\n    title: Two\n    parent: p\n    status: in_progress\n"
+    )
+    answers("a", "", "a", "", "q")
+
+    cli.main(["--graph", str(graph_dir), "review"])
+    reloaded = load_graph(graph_dir)
+    assert reloaded.get("p.one").acknowledges("inert_node")
+    assert reloaded.get("p.two").acknowledges("inert_node")
+
+
+def test_review_skips_findings_a_fix_already_resolved(tmp_path, answers, capsys):
+    """Closing the parent resolves rollup_lagging; nothing stale is shown."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: p\n    title: Parent\n    status: in_progress\n"
+        "  - id: p.a\n    title: A\n    parent: p\n    status: done\n"
+    )
+    answers("f", "y", "q")
+
+    cli.main(["--graph", str(graph_dir), "review"])
+    assert load_graph(graph_dir).get("p").status == "done"
+    assert "rollup_lagging" not in capsys.readouterr().out.split("proposed:")[-1]
+
+
+def test_review_routes_to_the_editor_at_the_right_line(tmp_path, answers, monkeypatch):
+    """Everything but `spike` is connected, so it is the only node with findings."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: sys\n    title: A system\n    status: in_progress\n"
+        "  - id: sys.a\n    title: A\n    parent: sys\n    status: done\n"
+        "  - id: sys.b\n    title: B\n    parent: sys\n    status: not_started\n"
+        "    gates: {start: sys.a.done}\n"
+        "  - id: spike\n    title: Spike\n    status: in_progress\n"
+    )
+    opened = {}
+    monkeypatch.setattr(
+        cli,
+        "_open_editor",
+        lambda path, line: opened.update(path=path, line=line) or True,
+    )
+    answers("e", "q")
+
+    cli.main(["--graph", str(graph_dir), "review"])
+    assert opened["path"].name == "g.yaml"
+    lines = (graph_dir / "g.yaml").read_text().splitlines()
+    assert lines[opened["line"] - 1].strip() == "- id: spike"
+
+
+def test_review_reports_nothing_to_do_when_clean(tmp_path, answers, capsys):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: p\n    title: Parent\n    status: in_progress\n"
+        "  - id: p.a\n    title: A\n    parent: p\n    status: done\n"
+        "  - id: p.b\n    title: B\n    parent: p\n    status: not_started\n"
+        "    gates: {start: p.a.done}\n"
+    )
+    answers()
+    assert cli.main(["--graph", str(graph_dir), "review"]) == 0
+    assert "nothing to review" in capsys.readouterr().out
+
+
+def test_acknowledge_write_appends_to_an_existing_list(tmp_path):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "id: a\nstatus: in_progress\nacknowledge: [unowned_node]\n"
+    )
+    graph = load_graph(graph_dir)
+    edit.acknowledge(graph_dir, graph, "a", "inert_node")
+
+    node = load_graph(graph_dir).get("a")
+    assert node.acknowledges("unowned_node") and node.acknowledges("inert_node")
+
+
+def test_acknowledge_write_refuses_a_block_list(tmp_path):
+    """Appending to a block list means guessing where it ends."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "id: a\nstatus: in_progress\nacknowledge:\n  - unowned_node\n"
+    )
+    graph = load_graph(graph_dir)
+    with pytest.raises(edit.EditError, match="by hand"):
+        edit.acknowledge(graph_dir, graph, "a", "inert_node")
+    assert "- unowned_node" in (graph_dir / "g.yaml").read_text()

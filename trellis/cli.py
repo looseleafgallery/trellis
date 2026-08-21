@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -876,6 +877,174 @@ def cmd_drift(args) -> int:
     return 1
 
 
+# Findings whose remedy is a status change trellis can make itself. Everything
+# else routes to the editor: structural edits are not the writer's job, and
+# pretending otherwise would guess at what someone meant.
+DIRECT_FIX = {
+    "rollup_lagging": ("status", "done", "close it - every child is done"),
+}
+
+
+def _open_editor(path, line: int) -> bool:
+    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL")
+    if not editor:
+        print(f"  no $EDITOR set - the node is at {path}:{line}")
+        return False
+    try:
+        # `+N` is understood by vi, vim, nano, emacs and most others; an editor
+        # that does not simply opens the file.
+        subprocess.call([editor, f"+{line}", str(path)])
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"  could not open {editor}: {exc}")
+        return False
+    return True
+
+
+def _review_one(args, graph, cache, graph_dir, engine, problem, index, total) -> str:
+    """Show one finding and act on the answer. Returns the action taken."""
+    print(f"\n[{index}/{total}] {problem.severity}  {problem.node}")
+    for line in problem.message.splitlines():
+        print(f"  {line.strip()}")
+    remedy = REMEDIES.get(problem.code)
+    if remedy:
+        print(f"  -> {remedy}")
+
+    choices = []
+    fix = DIRECT_FIX.get(problem.code)
+    if fix and problem.node in graph:
+        choices.append(("f", f"fix ({fix[2]})"))
+    if problem.severity != "error":
+        choices.append(("a", "acknowledge"))
+    choices += [("x", "explain"), ("e", "edit"), ("s", "skip"), ("q", "quit")]
+    menu = "  ".join(f"[{key}] {label}" for key, label in choices)
+
+    while True:
+        print(f"\n  {menu}")
+        try:
+            answer = input("> ").strip().lower()
+        except EOFError:
+            return "quit"
+
+        if answer in ("q", "quit"):
+            return "quit"
+        if answer in ("s", "skip", ""):
+            return "skip"
+
+        if answer in ("x", "explain"):
+            reasons = queries.explain(engine, problem.node)
+            if reasons:
+                _print_reasons(reasons)
+            else:
+                print("  nothing gates this node")
+            continue
+
+        if answer in ("e", "edit"):
+            path, line = edit.node_line(graph_dir, graph, problem.node)
+            if _open_editor(path, line):
+                return "edited"
+            continue
+
+        if answer in ("a", "acknowledge") and problem.severity != "error":
+            try:
+                reason = input("  why? (enter to skip) ").strip() or None
+            except EOFError:
+                reason = None
+            try:
+                write = edit.acknowledge(graph_dir, graph, problem.node, problem.code)
+            except edit.EditError as exc:
+                print(f"  error: {exc}")
+                continue
+            journal.record(
+                graph_dir,
+                "acknowledge",
+                f"acknowledged {problem.code} on {problem.node}",
+                [write],
+                reason=reason,
+            )
+            print(f"  acknowledged {problem.code} on {problem.node}")
+            return "acknowledged"
+
+        if answer in ("f", "fix") and fix:
+            field, value, _label = fix
+            delta = delta_mod.Delta(
+                changes=[delta_mod.ProposedChange(problem.node, field, value)],
+                source=f"review: {problem.code}",
+            )
+            code = _run_write(
+                args, graph, cache, graph_dir, delta, "review", delta.source
+            )
+            return "fixed" if code == 0 else "skip"
+
+        print("  not one of the options")
+
+
+def cmd_review(args) -> int:
+    """Walk the findings one at a time, with something you can do about each.
+
+    `doctor` hands you a list and leaves you to go and edit files. This is the
+    same list as a session: the loop keeps the position, does what it can do
+    safely, and puts you in the right file for everything else.
+    """
+    graph, cache, graph_dir = _load(args)
+    engine = Engine(graph, cache)
+    problems, muted = queries.check_with_muted(graph, engine)
+    cache.save()
+
+    if not sys.stdin.isatty():
+        print(
+            "error: review is interactive; run `trellis doctor` for the same "
+            "findings as a report.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.errors_only:
+        problems = [p for p in problems if p.severity == "error"]
+
+    if not problems:
+        tail = f" ({muted} acknowledged)" if muted else ""
+        print(f"nothing to review across {len(graph)} nodes{tail}")
+        return 0
+
+    print(f"{len(problems)} finding(s), most urgent first.")
+    if muted:
+        print(f"{muted} already acknowledged and not shown.")
+
+    tally: dict[str, int] = {}
+    live = {(p.node, p.code, p.message) for p in problems}
+    for index, problem in enumerate(problems, 1):
+        # A change may have resolved findings further down the list. Showing one
+        # that no longer fires would be worse than not showing it: the whole
+        # point is that these are true right now.
+        if (problem.node, problem.code, problem.message) not in live:
+            tally["resolved"] = tally.get("resolved", 0) + 1
+            continue
+
+        action = _review_one(
+            args, graph, cache, graph_dir, engine, problem, index, len(problems)
+        )
+        tally[action] = tally.get(action, 0) + 1
+        if action == "quit":
+            break
+        if action in ("acknowledged", "fixed", "edited"):
+            # The graph on disk changed, so re-read it and recompute what is
+            # still true. The position in the list is kept; the contents are not
+            # assumed to be.
+            graph, cache, graph_dir = _load(args)
+            engine = Engine(graph, cache)
+            live = {(p.node, p.code, p.message) for p in queries.check(graph, engine)}
+
+    print()
+    done = {k: v for k, v in tally.items() if k != "quit"}
+    if done:
+        print("  " + ", ".join(f"{v} {k}" for k, v in sorted(done.items())))
+    remaining = len(problems) - sum(done.values())
+    if remaining > 0:
+        print(f"  {remaining} not reviewed")
+    print("\nrun `trellis doctor` to see where that leaves things.")
+    return 0
+
+
 def cmd_deps(args) -> int:
     graph, _cache, _ = _load(args)
     if args.node not in graph:
@@ -1064,6 +1233,14 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DAYS",
     )
     p.set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser("review", help="walk the findings one at a time and act on them")
+    p.add_argument(
+        "--errors-only", action="store_true", help="only findings that block evaluation"
+    )
+    p.add_argument("-y", "--yes", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("-n", "--dry-run", action="store_true", help=argparse.SUPPRESS)
+    p.set_defaults(func=cmd_review)
 
     p = sub.add_parser("stats", help="cache and recomputation counters")
     p.set_defaults(func=cmd_stats)

@@ -188,6 +188,100 @@ def _new_node_path(graph_dir: Path, node_id: str) -> Path:
     return path
 
 
+def _append_list_field(
+    lines: list[str], node_id: str, field: str, value: str
+) -> list[str]:
+    """Add one entry to a flow-style list field, creating it if absent.
+
+    Only flow style (`acknowledge: [a, b]`) is written or rewritten. A block
+    list is refused rather than guessed at — appending to one means deciding
+    where the block ends, and a wrong guess corrupts the node quietly.
+    """
+    start, end, key_indent = _find_block(lines, node_id)
+    pattern = re.compile(r"^(\s*(?:-\s+)?)" + re.escape(field) + r":(.*)$")
+
+    for i in range(start, end):
+        match = pattern.match(lines[i])
+        if not match or len(match.group(1)) != key_indent:
+            continue
+        rest = match.group(2).strip()
+        if not rest.startswith("[") or not rest.endswith("]"):
+            raise EditError(
+                f"{node_id}: {field!r} is not a single-line list; add {value!r} by hand"
+            )
+        existing = [v.strip() for v in rest[1:-1].split(",") if v.strip()]
+        if value in existing:
+            return lines
+        existing.append(value)
+        lines[i] = f"{match.group(1)}{field}: [{', '.join(existing)}]"
+        return lines
+
+    id_pattern = re.compile(
+        r'^(\s*)(-\s+)?id:\s*["\']?' + re.escape(node_id) + r'["\']?\s*$'
+    )
+    for i in range(start, end):
+        if id_pattern.match(lines[i]):
+            lines.insert(i + 1, f"{' ' * key_indent}{field}: [{value}]")
+            return lines
+    raise EditError(f"{node_id}: could not place field {field!r}")
+
+
+def acknowledge(
+    graph_dir: str | Path, graph: Graph, node_id: str, code: str
+) -> WriteResult:
+    """Record on the node that this finding has been answered for good.
+
+    Verified the same way a status write is: reload, confirm the acknowledgement
+    took, and confirm nothing else moved. Restores the original bytes otherwise.
+    """
+    graph_dir = Path(graph_dir)
+    node = graph.get(node_id)
+    path = graph_dir / node.source
+    original = path.read_bytes()
+
+    try:
+        lines = _append_list_field(
+            path.read_text().splitlines(), node_id, "acknowledge", code
+        )
+        path.write_text("\n".join(lines) + "\n")
+
+        after = load_graph(graph_dir)
+        if not after.get(node_id).acknowledges(code):
+            raise EditError(f"{node_id}: acknowledgement of {code!r} did not take")
+        for other_id, other in graph.nodes.items():
+            if other_id == node_id:
+                continue
+            if (
+                other_id not in after
+                or after.get(other_id).fingerprint() != other.fingerprint()
+            ):
+                raise EditError(f"{other_id}: changed as a side effect of the write")
+    except Exception:
+        path.write_bytes(original)
+        raise
+
+    return WriteResult(
+        node=node_id,
+        field="acknowledge",
+        before=list(node.acknowledge),
+        after=[*node.acknowledge, code],
+        path=str(path),
+    )
+
+
+def node_line(graph_dir: str | Path, graph: Graph, node_id: str) -> tuple[Path, int]:
+    """Where this node is declared, so an editor can open at it."""
+    node = graph.get(node_id)
+    path = Path(graph_dir) / node.source
+    pattern = re.compile(
+        r'^(\s*)(-\s+)?id:\s*["\']?' + re.escape(node_id) + r'["\']?\s*$'
+    )
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        if pattern.match(line):
+            return path, number
+    return path, 1
+
+
 def apply_delta(graph_dir: str | Path, graph: Graph, delta: Delta) -> list[WriteResult]:
     """Write a validated delta to disk, or change nothing at all.
 
