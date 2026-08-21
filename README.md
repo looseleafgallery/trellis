@@ -392,6 +392,54 @@ position in the list is kept; its contents are not assumed.
 Interactive only. Non-interactively it points you at `doctor`, which reports
 the same findings.
 
+## Snapshots
+
+Git has your YAML. What it does not have — and what you cannot recover by
+checking out an old commit — is what the graph *meant* at a moment. Derived
+state depends on the engine, and the trust layer reads today's git history:
+volatility, staleness and drift are all computed against now. Run `check`
+against a three-week-old checkout and you get today's answers about
+three-week-old files, which is nobody's question.
+
+```bash
+trellis snapshot -m "before the schema landed"
+trellis snapshot --render mermaid --render brief
+trellis snapshot --list
+```
+
+**It is called a snapshot because that is a promise.** It is frozen on purpose,
+it is stale the moment after it is taken, and freshness is the reader's
+problem. So: nothing ever refreshes one in place, nothing presents one as
+current, and age leads every listing. `state` and `doctor` answer for now; this
+answers for then.
+
+Snapshots are content-addressed by the derived state they capture. Taking one
+twice from an unchanged graph is recognised rather than duplicated, and a
+future timeline over them is an index query rather than a rebuild.
+
+They live in `snapshots/`, are meant to be committed, and are indexed in
+`snapshots/index.jsonl`.
+
+### Renderers
+
+Anything that reads JSON on stdin and writes an artifact on stdout:
+
+```toml
+# trellis.toml
+[renderer.brief]
+command = ["your-tool", "--audience", "novice"]
+extension = "md"
+```
+
+```bash
+trellis snapshot --renderers      # what is available
+```
+
+A renderer is **never handed a path to your graph** — only the snapshot, on
+stdin. Read-only is a property of the interface rather than a rule anyone has
+to follow, which is why an external renderer is safe to point at code you did
+not write. `json` and `mermaid` are built in.
+
 ## Trust
 
 Evaluation is the easy half. The half that decides whether anyone still uses

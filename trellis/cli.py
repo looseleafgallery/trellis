@@ -12,6 +12,7 @@ from pathlib import Path
 from . import delta as delta_mod
 from . import edit, journal, queries, viz
 from . import evidence as evidence_mod
+from . import snapshot as snapshot_mod
 from .cache import Cache
 from .engine import CycleError, Derived, Engine
 from .loader import find_graph_dir, load_graph
@@ -1147,6 +1148,88 @@ def cmd_graph(args) -> int:
     return 0
 
 
+def cmd_snapshot(args) -> int:
+    """Freeze what the graph means right now, and render from it."""
+    graph, cache, graph_dir = _load(args)
+
+    if args.list:
+        entries = snapshot_mod.read_index(graph_dir)
+        if args.json:
+            _emit([e.as_dict() for e in entries], True)
+            return 0
+        if not entries:
+            print("no snapshots yet")
+            return 0
+        for entry in reversed(entries):  # newest first
+            age = entry.age_days()
+            # Age leads, because that is the only thing a snapshot cannot tell
+            # you about itself once it is out in the world.
+            when = f"{age}d ago" if age is not None else "unknown age"
+            print(f"{when:>12}  {entry.id}  {entry.nodes} nodes", end="")
+            if entry.graph_sha:
+                print(f"  @{entry.graph_sha}", end="")
+            print(f"  {entry.message}" if entry.message else "")
+            for asset in entry.assets:
+                print(f"                  {asset['path']}  ({asset['bytes']}b)")
+        print(
+            f"\n{len(entries)} snapshot(s). these are frozen; nothing refreshes them."
+        )
+        return 0
+
+    if args.renderers:
+        configured = snapshot_mod.load_renderers(graph_dir)
+        names = sorted({*snapshot_mod.BUILTIN, *configured})
+        for name in names:
+            spec = configured.get(name)
+            if spec:
+                command = " ".join(spec["command"])
+                print(f"  {name:<16} {command}")
+            else:
+                print(f"  {name:<16} (built in)")
+        if not configured:
+            print(
+                f"\nadd more in {snapshot_mod.CONFIG_NAME}:\n"
+                "  [renderer.brief]\n"
+                '  command = ["your-tool", "--flag"]\n'
+                '  extension = "md"'
+            )
+        return 0
+
+    engine = Engine(graph, cache)
+    try:
+        entry, is_new = snapshot_mod.take(
+            graph_dir,
+            engine,
+            renderers_wanted=args.render,
+            message=args.message or "",
+            force=args.force,
+        )
+    except snapshot_mod.SnapshotError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    cache.save()
+
+    if not is_new:
+        print(
+            f"nothing has changed since {entry.id} - the derived state is "
+            f"identical.\nuse --force to take one anyway."
+        )
+        return 0
+
+    if args.json:
+        _emit(entry.as_dict(), True)
+        return 0
+
+    print(f"{entry.id}")
+    for asset in entry.assets:
+        print(f"  {asset['path']}")
+    print(
+        f"\nfrozen at {entry.taken_at}. it is a snapshot: it will not update, and "
+        f"it says\nnothing about the graph after this moment."
+    )
+    return 0
+
+
 def cmd_deps(args) -> int:
     graph, _cache, _ = _load(args)
     if args.node not in graph:
@@ -1335,6 +1418,23 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DAYS",
     )
     p.set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser("snapshot", help="freeze what the graph means right now")
+    p.add_argument(
+        "--render",
+        action="append",
+        metavar="NAME",
+        help="also produce this artifact; repeatable",
+    )
+    p.add_argument("-m", "--message", help="why you took it")
+    p.add_argument(
+        "--list", action="store_true", help="what has been taken, newest first"
+    )
+    p.add_argument("--renderers", action="store_true", help="what can be rendered")
+    p.add_argument(
+        "--force", action="store_true", help="take one even if nothing has changed"
+    )
+    p.set_defaults(func=cmd_snapshot)
 
     p = sub.add_parser("blocking", help="what a node is holding up, by both measures")
     p.add_argument("node", nargs="?")

@@ -91,6 +91,12 @@ def _git(graph_dir: Path, *args: str) -> str | None:
     return result.stdout
 
 
+def head_sha(graph_dir: str | Path) -> str | None:
+    """The commit the graph is currently at, if it is in a repo at all."""
+    out = _git(Path(graph_dir), "rev-parse", "--short", "HEAD")
+    return out.strip() if out else None
+
+
 def file_history(graph_dir: str | Path) -> dict[str, tuple[int, datetime]]:
     """Revision count and last-changed per file, in one git call.
 
