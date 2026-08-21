@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import UTC
 from pathlib import Path
 
 from . import delta as delta_mod
@@ -1224,6 +1225,26 @@ def cmd_graph(args) -> int:
         )
         return 2
 
+    if args.format == "tree":
+        print(viz.tree(engine, nodes))
+        return 0
+
+    if args.format == "html":
+        from datetime import datetime
+
+        when = datetime.now(UTC).isoformat(timespec="seconds")
+        label = args.around or ("contracts" if args.contracts else "graph")
+        target = Path(args.out or f"trellis-{label.replace('.', '_')}.html")
+        target.write_text(viz.html(engine, nodes, label, when))
+        print(f"{target}")
+        print(
+            f"{len(nodes)} nodes, as of {when}. Open it in a browser.\n"
+            "the graph is written into the file; only mermaid itself is fetched, "
+            "and only\nwhen you open it - nothing about your project leaves this "
+            "machine."
+        )
+        return 0
+
     body = viz.mermaid(engine, nodes)
     if args.raw:
         print(body)
@@ -1542,6 +1563,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-nodes", type=int, default=25)
     p.add_argument("--force", action="store_true", help="render it anyway")
     p.add_argument("--raw", action="store_true", help="omit the markdown fence")
+    p.add_argument(
+        "-f",
+        "--format",
+        choices=("tree", "mermaid", "html"),
+        default="tree",
+        help="tree draws in the terminal; mermaid emits source; html writes a page",
+    )
+    p.add_argument("--out", metavar="PATH", help="where to write, for --format html")
     p.set_defaults(func=cmd_graph)
 
     p = sub.add_parser("review", help="walk the findings one at a time and act on them")

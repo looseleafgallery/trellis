@@ -1291,3 +1291,37 @@ def test_drift_does_not_claim_nothing_was_ever_written(project, capsys):
     out = capsys.readouterr().out
     assert "no status writes are recorded in this graph's journal" in out
     assert "has not written any status yet" not in out
+
+
+def test_graph_draws_in_the_terminal_by_default(workspace, capsys):
+    assert cli.main(["--graph", str(workspace), "graph", "--around", "agent.plan"]) == 0
+    out = capsys.readouterr().out
+    assert "flowchart" not in out  # mermaid source is not a picture
+    assert "agent.plan" in out
+
+
+def test_graph_still_emits_mermaid_on_request(workspace, capsys):
+    cli.main(
+        ["--graph", str(workspace), "graph", "--around", "agent.plan", "-f", "mermaid"]
+    )
+    assert "flowchart LR" in capsys.readouterr().out
+
+
+def test_graph_writes_a_page_and_says_where(workspace, capsys, tmp_path):
+    target = tmp_path / "out.html"
+    cli.main(
+        [
+            "--graph",
+            str(workspace),
+            "graph",
+            "--contracts",
+            "-f",
+            "html",
+            "--out",
+            str(target),
+        ]
+    )
+    assert target.exists()
+    out = capsys.readouterr().out
+    assert str(target) in out
+    assert "nothing about your project leaves this machine" in out

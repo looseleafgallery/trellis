@@ -11,6 +11,11 @@ expensive to break.
 
 ### Added
 
+- `trellis graph` draws in the terminal by default, as a dependency tree read
+  top-down from what is waiting to what it waits on. `-f mermaid` keeps the
+  source for pasting into an issue, and `-f html` writes a self-contained page
+  with the graph embedded in it.
+
 - `ref:` on a node records which external item it *is* — a ticket id, a URL,
   whatever the rest of your world addresses the work by. Opaque and optional:
   never fetched, never parsed, no assumption there is one tracker. A ref works
