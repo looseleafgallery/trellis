@@ -125,6 +125,96 @@ def read(graph_dir: str | Path, limit: int | None = None) -> list[dict]:
 
 
 @dataclass
+class Outcome:
+    """What checking one believed edge turned out to be.
+
+    Recorded because it is not recoverable afterwards. A confirmed edge becomes
+    `verified` in the YAML and a wrong one gets rewritten or deleted — both
+    structural edits, both unjournaled, and the wrong case usually **deletes the
+    evidence of its own failure**, which is the datum worth keeping.
+    """
+
+    source: str
+    target: str
+    how: str
+    held: bool
+    at: str = ""
+    reason: str = ""
+
+    @property
+    def edge(self) -> tuple[str, str]:
+        return (self.source, self.target)
+
+    def as_dict(self) -> dict:
+        return {
+            "source": self.source,
+            "target": self.target,
+            "how": self.how,
+            "held": self.held,
+            "reason": self.reason,
+        }
+
+
+def record_outcome(
+    graph_dir: str | Path, outcomes: list[Outcome], reason: str | None = None
+) -> Path:
+    """Append what a reconciliation pass found.
+
+    Kept in the journal rather than beside the edge, so it survives the edge
+    being deleted — which is exactly what happens to an edge that turned out to
+    be wrong.
+    """
+    path = journal_path(graph_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wrong = sum(1 for o in outcomes if not o.held)
+    entry = {
+        "at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "origin": "reconcile",
+        "text": f"checked {len(outcomes)} edge(s), {wrong} wrong",
+        "reason": reason,
+        "writes": [],
+        "outcomes": [o.as_dict() for o in outcomes],
+    }
+    with path.open("a") as handle:
+        handle.write(json.dumps(entry, default=str) + "\n")
+    return path
+
+
+def outcomes(graph_dir: str | Path) -> list[Outcome]:
+    """Every recorded reconciliation outcome, oldest first."""
+    out: list[Outcome] = []
+    for entry in read(graph_dir):
+        at = entry.get("at", "")
+        for item in entry.get("outcomes") or []:
+            out.append(
+                Outcome(
+                    source=item.get("source", ""),
+                    target=item.get("target", ""),
+                    how=item.get("how", ""),
+                    held=bool(item.get("held")),
+                    at=at,
+                    reason=item.get("reason", "") or entry.get("reason") or "",
+                )
+            )
+    return out
+
+
+def reconciled(graph_dir: str | Path) -> dict[tuple[str, str], Outcome]:
+    """The most recent outcome per edge."""
+    return {o.edge: o for o in outcomes(graph_dir)}
+
+
+def calibration(graph_dir: str | Path) -> tuple[int, int]:
+    """(checked, wrong) across every recorded outcome.
+
+    Returned as counts, never a rate. Small denominators lie, and 2 of 7 is
+    honest where 29% invites being read as a property of the world.
+    """
+    all_outcomes = outcomes(graph_dir)
+    return len(all_outcomes), sum(1 for o in all_outcomes if not o.held)
+
+
+@dataclass
 class Correction:
     """A declaration that walked backwards: a belief revised, not progress."""
 

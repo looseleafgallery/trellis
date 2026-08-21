@@ -327,6 +327,10 @@ that is the most useful sentence in the whole session.
   recovered later. Always pass `--because`, or answer the prompt. See below.
 - `trellis trust` — what is stale, what churns, which edges were never
   confirmed.
+- `trellis reconcile` — walk the unconfirmed edges and record whether each held.
+  **For the user, not for you**: you cannot check an edge against a system of
+  record on their behalf. Suggest it when `trust` lists unconfirmed edges, and
+  never guess an outcome.
 - `trellis blocking <node>` — what it is holding up. Reports two numbers:
   what unlocks the moment it lands, and what is blocked downstream behind it.
   **Never quote the second as the first** — they answer different questions,

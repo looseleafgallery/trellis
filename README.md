@@ -767,6 +767,41 @@ and `trust` reports the two provenance failures:
   afterwards without anything here noticing. This is the green-but-wrong CI
   check, expressed in the model.
 
+### Checking them, and keeping what you find
+
+```
+$ trellis reconcile
+7 edge(s) to check against the world.
+checked 12 before; 2 turned out wrong.
+
+[1/7] agent.emit -> contract.stage_handoff
+  (inferred, never confirmed)
+
+  [h] held  [w] wrong  [s] skip  [q] quit
+> w
+  why? the D3 in that sentence was the other project's
+```
+
+The outcome is the point, and it is **not recoverable afterwards**: a confirmed
+edge becomes `verified` in the YAML, a wrong one gets rewritten or deleted, and
+the wrong case usually deletes the evidence of its own failure. So it is
+recorded in the journal, where it survives the edge.
+
+That is what turns the annotation from a label into a measurement. `trust` then
+reports it:
+
+```
+unconfirmed edges - believed, never checked:
+  last time you checked, 1 of 3 were wrong.
+```
+
+Counts, never a rate. Two of seven is honest; 29% invites being read as a
+property of the world rather than of one graph on one day.
+
+An edge you have checked is not asked about again unless you pass `--all`,
+which also shows what you found last time. Marking an edge `verified` is a
+structural edit, so `reconcile` hands you the line rather than writing it.
+
 Annotating an edge deliberately does **not** invalidate a cache entry —
 provenance changes how a result is reported, never what it is. If annotating
 cost a recomputation, nobody would annotate anything.

@@ -11,6 +11,11 @@ expensive to break.
 
 ### Added
 
+- `trellis reconcile` walks believed edges and records whether each held, with
+  the reason. Kept in the journal so it survives the edge being deleted — which
+  is what happens to an edge that turned out to be wrong. `trust` then reports
+  how many checked edges were wrong, as counts rather than a rate.
+
 - `trellis graph` draws in the terminal by default, as a dependency tree read
   top-down from what is waiting to what it waits on. `-f mermaid` keeps the
   source for pasting into an issue, and `-f html` writes a self-contained page
