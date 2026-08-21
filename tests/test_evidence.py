@@ -664,3 +664,122 @@ def test_acknowledge_does_not_change_the_fingerprint():
     plain = node_from_dict({"id": "a", "status": "done"})
     acked = node_from_dict({"id": "a", "status": "done", "acknowledge": ["inert_node"]})
     assert plain.fingerprint() == acked.fingerprint()
+
+
+# -- slices: what is this holding up, and what does it look like -------------
+
+
+def pipeline() -> Graph:
+    return build(
+        {"id": "a", "status": "in_progress"},
+        {"id": "b", "status": "not_started", "gates": {"start": "a.done"}},
+        {"id": "c", "status": "not_started", "gates": {"start": "b.done"}},
+        {"id": "d", "status": "not_started", "gates": {"start": "a.done and z.done"}},
+        {"id": "z", "status": "not_started"},
+    )
+
+
+def test_blocking_separates_unlocks_now_from_waiting_downstream():
+    """The two numbers people conflate: 'frees one' vs 'is on the path of three'."""
+    from trellis.engine import Engine
+
+    result = queries.blocking(Engine(pipeline()), "a")
+    # b starts the moment a lands; d also needs z, so it does not
+    assert result.unlocks == ["b"]
+    assert result.waiting == ["b", "c", "d"]
+
+
+def test_unlocks_agrees_with_what_impact_would_say():
+    """Computed through the same what-if path, so the numbers cannot diverge."""
+    from trellis.cache import Cache
+    from trellis.engine import Engine
+
+    graph = pipeline()
+    result = queries.blocking(Engine(graph), "a")
+    predicted = queries.impact(graph, {"a": {"status": "done"}}, Cache())
+    assert result.unlocks == predicted.unlocked
+
+
+def test_a_contract_lands_by_being_agreed_not_done():
+    from trellis.engine import Engine
+
+    graph = build(
+        {"id": "c", "kind": "contract", "status": "draft", "satisfied_by": ["impl"]},
+        {"id": "impl", "status": "done"},
+        {"id": "user", "status": "not_started", "gates": {"start": "c.live"}},
+    )
+    assert queries.blocking(Engine(graph), "c").unlocks == ["user"]
+
+
+def test_containment_is_not_counted_as_waiting():
+    """A parent depends on its children for rollup but is not waiting on them."""
+    from trellis.engine import Engine
+
+    graph = build(
+        {"id": "p", "status": "in_progress"},
+        {"id": "p.child", "parent": "p", "status": "not_started"},
+    )
+    assert queries.blocking(Engine(graph), "p.child").waiting == []
+
+
+def test_chokepoints_rank_by_how_much_is_waiting():
+    from trellis.engine import Engine
+
+    points = queries.chokepoints(Engine(pipeline()))
+    assert points[0].node == "a"
+    assert len(points[0].waiting) == 3
+
+
+def test_finished_work_is_not_a_chokepoint():
+    from trellis.engine import Engine
+
+    graph = pipeline().with_overlay({"a": {"status": "done"}})
+    assert "a" not in [b.node for b in queries.chokepoints(Engine(graph))]
+
+
+def test_mermaid_draws_prerequisite_to_dependent():
+    """`b requires a` renders `a --> b`, so the diagram reads as the work flows."""
+    from trellis import viz
+    from trellis.engine import Engine
+
+    engine = Engine(pipeline())
+    out = viz.mermaid(engine, {"a", "b"})
+    assert "a --> b" in out
+    assert "b --> a" not in out
+
+
+def test_a_slice_only_draws_edges_inside_itself():
+    from trellis import viz
+    from trellis.engine import Engine
+
+    out = viz.mermaid(Engine(pipeline()), {"a", "b"})
+    edges = [line.strip() for line in out.splitlines() if "-->" in line]
+    assert edges == ["a --> b"]
+
+
+def test_selecting_around_a_node_walks_both_directions():
+    from trellis import viz
+
+    graph = pipeline()
+    assert viz.select(graph, around="b", hops=1) == {"a", "b", "c"}
+    assert "d" in viz.select(graph, around="b", hops=2)
+
+
+def test_children_are_grouped_under_their_parent():
+    from trellis import viz
+    from trellis.engine import Engine
+
+    graph = build(
+        {"id": "sys", "title": "A subsystem", "status": "in_progress"},
+        {"id": "sys.a", "parent": "sys", "status": "done"},
+    )
+    out = viz.mermaid(Engine(graph), {"sys", "sys.a"})
+    assert 'subgraph sys_box["A subsystem"]' in out
+
+
+def test_readiness_is_rendered_as_a_class():
+    from trellis import viz
+    from trellis.engine import Engine
+
+    out = viz.mermaid(Engine(pipeline()), {"a", "b"})
+    assert "class b blocked;" in out

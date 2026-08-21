@@ -11,6 +11,12 @@ expensive to break.
 
 ### Added
 
+- `trellis blocking <node>` reports what a node is holding up as two numbers —
+  what unlocks immediately, and what is blocked downstream behind it — because
+  conflating them is a real and repeated reporting error. `--all` ranks
+  chokepoints.
+- `trellis graph` renders a slice as mermaid for pasting into an issue or PR.
+  Refuses slices too large to read.
 - `acknowledge:` on a node answers a finding for good. Acknowledged findings
   are counted rather than hidden, stale acknowledgements are reported, and
   errors cannot be acknowledged — a graph that cannot evaluate must not be able

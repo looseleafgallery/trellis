@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from . import delta as delta_mod
-from . import edit, journal, queries
+from . import edit, journal, queries, viz
 from . import evidence as evidence_mod
 from .cache import Cache
 from .engine import CycleError, Derived, Engine
@@ -1045,6 +1045,108 @@ def cmd_review(args) -> int:
     return 0
 
 
+def cmd_blocking(args) -> int:
+    """What is this holding up? Two numbers, because they answer two questions."""
+    graph, cache, _ = _load(args)
+    engine = Engine(graph, cache)
+
+    if args.all:
+        points = queries.chokepoints(engine, args.limit)
+        cache.save()
+        if args.json:
+            _emit([b.as_dict() for b in points], True)
+            return 0
+        if not points:
+            print("nothing is holding anything up")
+            return 0
+        print("holding up the most, open work only:\n")
+        for item in points:
+            print(
+                f"  {item.node:<32} unlocks {len(item.unlocks):>2} now, "
+                f"{len(item.waiting):>2} waiting downstream  {_title(graph, item.node)}"
+            )
+        print(
+            "\n`unlocks` starts moving the moment it lands. `waiting` is everything "
+            "downstream\nthat cannot start while it is open - most of that is also "
+            "waiting on other things."
+        )
+        return 0
+
+    if args.node not in graph:
+        print(f"error: unknown node {args.node!r}", file=sys.stderr)
+        return 2
+    result = queries.blocking(engine, args.node)
+    cache.save()
+
+    if args.json:
+        _emit(result.as_dict(), True)
+        return 0
+
+    print(f"{args.node}  {_title(graph, args.node)}\n")
+    if result.unlocks:
+        print(f"unlocks {len(result.unlocks)} node(s) the moment it lands:")
+        for node_id in result.unlocks:
+            print(f"  > {node_id}  {_title(graph, node_id)}")
+    else:
+        print("unlocks nothing directly")
+    downstream_only = [n for n in result.waiting if n not in result.unlocks]
+    if downstream_only:
+        print(
+            f"\n{len(downstream_only)} more blocked downstream, also waiting on "
+            f"other things:"
+        )
+        for node_id in downstream_only:
+            print(f"  . {node_id}  {_title(graph, node_id)}")
+    print(
+        "\nthese are different questions. quoting the second number as the first "
+        "is\nthe usual way this gets said wrong."
+    )
+    return 0
+
+
+def cmd_graph(args) -> int:
+    """Render a slice as mermaid, for pasting where someone else can read it."""
+    graph, cache, _ = _load(args)
+    engine = Engine(graph, cache)
+    derived = engine.all_derived()
+
+    if args.around and args.around not in graph:
+        print(f"error: unknown node {args.around!r}", file=sys.stderr)
+        return 2
+
+    nodes = viz.select(
+        graph,
+        around=args.around,
+        hops=args.hops,
+        contracts_only=args.contracts,
+        blocked_only=args.blocked,
+        derived=derived,
+    )
+    cache.save()
+
+    if not nodes:
+        print("nothing in that slice", file=sys.stderr)
+        return 1
+    if len(nodes) > args.max_nodes and not args.force:
+        print(
+            f"error: that slice is {len(nodes)} nodes; a diagram that big is not "
+            f"readable.\n"
+            f"narrow it with --around <node>, --contracts, or --blocked, "
+            f"or pass --force.",
+            file=sys.stderr,
+        )
+        return 2
+
+    body = viz.mermaid(engine, nodes)
+    if args.raw:
+        print(body)
+    else:
+        print("```mermaid")
+        print(body)
+        print("```")
+    return 0
+
+
 def cmd_deps(args) -> int:
     graph, _cache, _ = _load(args)
     if args.node not in graph:
@@ -1233,6 +1335,26 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DAYS",
     )
     p.set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser("blocking", help="what a node is holding up, by both measures")
+    p.add_argument("node", nargs="?")
+    p.add_argument(
+        "--all", action="store_true", help="rank every open node by what it holds up"
+    )
+    p.add_argument("--limit", type=int, default=10)
+    p.set_defaults(func=cmd_blocking)
+
+    p = sub.add_parser("graph", help="render a slice as mermaid")
+    p.add_argument("--around", metavar="NODE", help="centre the slice on one node")
+    p.add_argument("--hops", type=int, default=1, help="how far from --around")
+    p.add_argument(
+        "--contracts", action="store_true", help="contracts and who touches them"
+    )
+    p.add_argument("--blocked", action="store_true", help="only what is not moving")
+    p.add_argument("--max-nodes", type=int, default=25)
+    p.add_argument("--force", action="store_true", help="render it anyway")
+    p.add_argument("--raw", action="store_true", help="omit the markdown fence")
+    p.set_defaults(func=cmd_graph)
 
     p = sub.add_parser("review", help="walk the findings one at a time and act on them")
     p.add_argument(

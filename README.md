@@ -316,6 +316,53 @@ Every YAML example in `AGENTS.md` and this README is parsed by the test suite,
 so a doc that drifts from the schema fails CI rather than teaching an agent to
 write files that do not load.
 
+## Slices
+
+Two commands exist because a person cannot answer their question from memory
+and will otherwise answer it wrongly. That is the bar any new output has to
+clear here.
+
+### What is this holding up
+
+```
+$ trellis blocking tools.sandbox
+unlocks 1 node(s) the moment it lands:
+  > tools.streaming  Streaming tool results
+
+4 more blocked downstream, also waiting on other things:
+  . agent.emit  Emit final response
+  ...
+```
+
+**Two numbers, because they answer two questions.** `unlocks` is what starts
+moving the moment this lands. `waiting` is everything downstream that cannot
+start while it is open — larger, because most of it is waiting on other things
+too. Quoting the second as the first is the usual way this gets said wrong, and
+it is a mistake with a real instance behind it: someone told their team a node
+"unblocks six slots" all week when the answer to the question they meant was
+five.
+
+`unlocks` is computed through the same what-if path `impact` uses, so the two
+cannot drift apart.
+
+`trellis blocking --all` ranks every open node by what it is holding up —
+chokepoints, without having to guess where to look.
+
+### A picture, for the person you are trying to agree with
+
+```bash
+trellis graph --contracts          # contracts and whoever touches them
+trellis graph --around agent.plan --hops 2
+trellis graph --blocked            # only what is not moving
+```
+
+Emits mermaid inside a fenced block, so it pastes into an issue or a PR and
+renders for someone who does not have trellis installed. Arrows are drawn
+prerequisite → dependent, so the diagram reads the way the work flows.
+
+Slices, not whole graphs: it refuses past 25 nodes unless you pass `--force`,
+because a diagram nobody can read is worse than the list it replaced.
+
 ## Reviewing findings with a person in the loop
 
 `doctor` hands you a list and leaves you to go and edit files. `trellis review`
