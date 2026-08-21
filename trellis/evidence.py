@@ -255,6 +255,9 @@ def stale(
         node = graph.get(node_id)
         if node.kind == "work" and node.status == "in_progress":
             out.append(item)
+        elif node.kind == "work" and node.awaiting:
+            # Same rule as an undecided contract: nobody is making this call.
+            out.append(item)
         elif node.kind == "contract" and node.status in ("draft", "proposed"):
             # An agreement nobody has touched in weeks is a decision nobody is
             # making, which is exactly the thing that quietly holds up a chain.

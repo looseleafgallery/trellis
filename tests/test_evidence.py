@@ -783,3 +783,99 @@ def test_readiness_is_rendered_as_a_class():
 
     out = viz.mermaid(Engine(pipeline()), {"a", "b"})
     assert "class b blocked;" in out
+
+
+# -- waiting on a person, not on work ----------------------------------------
+
+
+def awaiting_graph() -> Graph:
+    return build(
+        {"id": "storage", "status": "not_started", "awaiting": "which backend"},
+        {"id": "api", "status": "not_started", "gates": {"start": "storage.done"}},
+        {"id": "pickup", "status": "not_started"},
+    )
+
+
+def test_a_decision_owed_is_not_ready():
+    from trellis.engine import Engine
+
+    engine = Engine(awaiting_graph())
+    assert engine.derived("storage").readiness == "awaiting"
+    assert engine.derived("pickup").readiness == "ready"
+
+
+def test_ready_excludes_it():
+    """The gate is open, but nobody can actually pick it up."""
+    from trellis.engine import Engine
+
+    picked = [d.id for d in queries.ready(Engine(awaiting_graph()))]
+    assert picked == ["pickup"]
+
+
+def test_blocked_by_work_outranks_a_decision():
+    """If the gate is shut, the work is the truth."""
+    from trellis.engine import Engine
+
+    graph = build(
+        {"id": "a", "status": "not_started"},
+        {
+            "id": "b",
+            "status": "not_started",
+            "gates": {"start": "a.done"},
+            "awaiting": "a call nobody has made",
+        },
+    )
+    assert Engine(graph).derived("b").readiness == "blocked"
+
+
+def test_progress_outranks_a_decision():
+    from trellis.engine import Engine
+
+    graph = build({"id": "a", "status": "in_progress", "awaiting": "something"})
+    assert Engine(graph).derived("a").readiness == "active"
+
+
+def test_it_is_exported_so_a_gate_can_read_it():
+    from trellis.engine import Engine
+
+    engine = Engine(awaiting_graph())
+    assert engine.derived("storage").exports["awaiting"] is True
+    assert engine.derived("pickup").exports["awaiting"] is False
+
+
+def test_it_changes_the_fingerprint():
+    """Unlike evidence or acknowledgements, this changes what readiness is."""
+    plain = node_from_dict({"id": "a", "status": "not_started"})
+    owed = node_from_dict({"id": "a", "status": "not_started", "awaiting": "a call"})
+    assert plain.fingerprint() != owed.fingerprint()
+
+
+def test_check_reports_it_as_its_own_class():
+    problems = [
+        p for p in queries.check(awaiting_graph()) if p.code == "awaiting_decision"
+    ]
+    assert len(problems) == 1
+    assert "which backend" in problems[0].message
+
+
+def test_explain_downstream_names_the_kind_of_push_needed():
+    from trellis.engine import Engine
+
+    reasons = queries.explain(Engine(awaiting_graph()), "api")
+    detail = reasons[0].children[0].detail
+    assert detail == "awaiting a decision, not blocked by work"
+
+
+def test_an_undecided_node_goes_stale(repo):
+    """A decision nobody has touched in weeks is a decision nobody is making."""
+    graph = load_graph(repo).with_overlay(
+        {"quiet0": {"status": "not_started", "awaiting": "a long-unmade call"}}
+    )
+    ev = evidence.gather(repo, graph, now=NOW)
+    assert "quiet0" in {e.node for e in evidence.stale(graph, {}, ev, 14)}
+
+
+def test_a_contract_is_never_flagged_as_awaiting_a_decision():
+    """Contracts already say this with `unagreed`; two words for it would be worse."""
+    graph = build({"id": "c", "kind": "contract", "status": "draft"})
+    assert not [p for p in queries.check(graph) if p.code == "awaiting_decision"]

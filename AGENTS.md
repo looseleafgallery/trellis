@@ -82,8 +82,24 @@ Right: `a.done` · `c.live` · `has(tools.registry, "tool-discovery")` ·
 Wrong: `a.status == "done"` · `a == done` · `depends_on: [a]` · `a.ready`
 
 **Facts on every node:** `done`, `complete`, `active`, `abandoned`,
-`superseded`, `dead`, `provides`, `children_done`, `progress`, `leaf_done`,
-`leaf_total`. Contracts add `live`, `agreed`, `frozen`, `version`.
+`superseded`, `dead`, `awaiting`, `provides`, `children_done`, `progress`,
+`leaf_done`, `leaf_total`. Contracts add `live`, `agreed`, `frozen`, `version`.
+
+**A node waiting on a person, not on work:**
+
+```yaml
+id: a.thing
+status: not_started
+awaiting: which of the two storage backends we standardise on
+```
+
+Its readiness becomes `awaiting` rather than `ready`, and `trellis ready`
+excludes it — the gate is open, but nobody can actually pick it up. Free text
+describing *what* is owed; **do not put a person'"'"'s name in it.** Who owes a
+decision is a tracker'"'"'s job. Clear it with `trellis set <node> awaiting=none`
+once the call is made.
+
+Blocked-by-work outranks it: if the gate is shut, the work is the truth.
 
 **Gate names are open.** `start` drives readiness and `finish` is checked
 against a completion claim; any other name (`review_passed`, `security_signoff`)
@@ -265,7 +281,9 @@ that is the most useful sentence in the whole session.
 
 ## Ongoing use
 
-- `trellis ready` — what can be picked up now.
+- `trellis ready` — what can be picked up now. Anything `awaiting` a decision
+  is deliberately absent; report those separately if the user asks what is
+  outstanding, because they need a person rather than an engineer.
 - `trellis explain <node>` — why something is blocked, to root causes. Edges
   marked `inferred` render as an instruction to go check; pass that on.
 - `trellis impact <node> --set status=done` — what a change would do, before

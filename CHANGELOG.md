@@ -11,6 +11,23 @@ expensive to break.
 
 ### Added
 
+- `awaiting:` on a work node records that a decision is owed before it can
+  move. Readiness becomes `awaiting` rather than `ready`, `trellis ready`
+  excludes it, `explain` says *waiting on a decision, not blocked by work*, and
+  it goes stale like any other declaration.
+- `trellis snapshot` freezes derived state as a point-in-time record — the one
+  thing git cannot give back, since the trust layer computes against today.
+  Content-addressed, never refreshed in place, indexed with age first.
+- Snapshot renderers: any executable reading the snapshot as JSON on stdin and
+  writing an artifact on stdout, declared in `trellis.toml`. Never given a path
+  to the graph, so read-only is structural. `json` and `mermaid` built in.
+- `trellis review` walks findings one at a time with an action on each:
+  acknowledge (with a reason, journaled), a direct fix where the remedy is
+  unambiguous, or open `$EDITOR` at the node. Re-reads the graph after any
+  change and skips findings the change already resolved.
+- `trellis drift` reports statuses changed outside the loop, naming the ones
+  that walked backwards as unrecorded corrections. `--accept` records what the
+  file now says, and why.
 - `trellis blocking <node>` reports what a node is holding up as two numbers —
   what unlocks immediately, and what is blocked downstream behind it — because
   conflating them is a real and repeated reporting error. `--all` ranks

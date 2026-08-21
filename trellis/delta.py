@@ -19,7 +19,7 @@ from .model import Graph, ModelError, node_from_dict
 # Fields the writer can safely edit in place. All scalars: a structural change
 # (rewriting a `gates:` block) is a YAML surgery problem, not a state update,
 # and belongs in your editor. See edit.py.
-EDITABLE_FIELDS = ("status", "version", "title", "parent")
+EDITABLE_FIELDS = ("status", "version", "title", "parent", "awaiting")
 
 
 class DeltaError(ValueError):
@@ -101,6 +101,8 @@ def coerce(field_name: str, value: object) -> object:
             raise DeltaError(f"version must be an integer, got {value!r}") from None
     if field_name == "parent" and value in ("", "none", "null", None):
         return None
+    if field_name == "awaiting" and value in ("none", "null", None):
+        return ""  # clearing it means the decision was made
     if isinstance(value, str):
         return value.strip()
     return value
