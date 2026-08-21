@@ -12,16 +12,32 @@ nodes:
   - id: trust.journal_home
     title: Make the why survive a clone
     parent: trust
-    status: not_started
-    awaiting: whether the journal is committed, moved, or documented as local
-    gates:
-      start: contract.durable_state_home.agreed
+    status: done
     provides: [shared-history]
-    evidence:
-      contract.durable_state_home: stated
     notes: >
       #28. Nobody has hit this because the tool has been used from one working
       copy. It bites the first time two people share a graph.
+
+  - id: trust.reconcile_loop
+    title: Capture whether a checked edge held or was wrong
+    parent: trust
+    status: not_started
+    provides: [reconciliation-outcome]
+    notes: >
+      #40. Surfaced by this graph rather than by a person: the contract had two
+      consumers and nothing implementing it. The outcome is not recoverable
+      from the files, because the wrong case deletes the evidence of its own
+      failure.
+
+  - id: trust.honest_output
+    title: Audit output for conclusions the tool has not verified
+    parent: trust
+    status: not_started
+    notes: >
+      #41. Two messages stated diagnoses drawn from lookups that could not have
+      succeeded. Both fixed; the pattern is not audited. We apply
+      challenge-never-assert to the user's declarations and had not been
+      applying it to our own output.
 
   - id: trust.calibration
     title: Report how often unconfirmed edges were wrong
@@ -35,11 +51,25 @@ nodes:
       #19. Measured once already: 2 of 7 unconfirmed edges were wrong, 0 of 29
       verified ones were. The number is the product's proof.
 
+  - id: trust.node_identity
+    title: Say which external item a node is
+    parent: trust
+    status: not_started
+    provides: [external-identity]
+    notes: >
+      #39. Identity, not grounding: *which thing is this*, rather than *is this
+      claim still true*. Today it lives in the title, so a reworded title
+      breaks the join and a parallel table cannot be deleted.
+
   - id: trust.external_grounding
     title: Challenge a declaration with branch and PR state
     parent: trust
     status: not_started
     provides: [repo-evidence]
+    gates:
+      start: has(trust.node_identity, "external-identity")
+    evidence:
+      trust.node_identity: stated
     notes: >
       #4. Two signals, both challenge-only. Deliberately not a full
       integration - the value is in the challenge, not the coverage.
