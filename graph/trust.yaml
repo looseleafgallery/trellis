@@ -59,7 +59,7 @@ nodes:
     ref: "#39"
     title: Say which external item a node is
     parent: trust
-    status: done_unverified
+    status: done
     provides: [external-identity]
     notes: >
       Identity, not grounding: *which thing is this*, rather than *is this
