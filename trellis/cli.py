@@ -656,6 +656,7 @@ REMEDIES = {
     "frozen_unimplemented": "frozen before it was built. Unfreeze, or finish it.",
     "depends_on_abandoned": "this requires work that is gone. Re-point it or drop it.",
     "dead_evidence": "the edge this justified no longer exists - remove the evidence.",
+    "drift": "edited outside trellis - reconcile it with `set`, or accept it.",
     "cycle": "these depend on each other. One of the edges is wrong.",
     "dangling_reference": "names a node that does not exist. Typo, or not modelled yet?",
     "dangling_evidence": "evidence names a node that does not exist.",
@@ -699,6 +700,25 @@ def cmd_doctor(args) -> int:
                 f"claims to be moving but has not changed in {item.age_days} days",
             )
         )
+    for item in journal.drift(graph_dir, graph):
+        if item.is_correction:
+            findings.append(
+                (
+                    "warn",
+                    item.node,
+                    f"was walked back from {item.journaled!r} to {item.actual!r} outside "
+                    f"trellis - an unrecorded correction, and its reason is gone",
+                )
+            )
+        else:
+            findings.append(
+                (
+                    "info",
+                    item.node,
+                    f"changed outside trellis: it wrote {item.journaled!r}, the file "
+                    f"says {item.actual!r}",
+                )
+            )
     for node_id, count in sorted(journal.correction_counts(graph_dir).items()):
         if count >= 2:
             findings.append(
@@ -765,6 +785,82 @@ def cmd_doctor(args) -> int:
             print(f"      -> {remedy}")
     print("\nnone of this changed any state. these are questions, not corrections.")
     return 1 if any(f[0] == "error" for f in findings) else 0
+
+
+def cmd_drift(args) -> int:
+    """Has anything been edited outside the loop since trellis last wrote it?"""
+    graph, cache, graph_dir = _load(args)
+    drifted = journal.drift(graph_dir, graph)
+    cache.save()
+
+    if args.accept and drifted:
+        # Reconciling by re-running `set` does not work: the file already says
+        # what you would be setting it to, so the change is a no-op and nothing
+        # is journaled. Accepting is its own act — it records what the file now
+        # says, and why, which is the part a hand edit threw away.
+        writes = [
+            edit.WriteResult(
+                node=item.node,
+                field="status",
+                before=item.journaled,
+                after=item.actual,
+                path=str(graph_dir / graph.get(item.node).source),
+            )
+            for item in drifted
+        ]
+        journal.record(
+            graph_dir,
+            "accept",
+            "accepted an edit made outside trellis",
+            writes,
+            reason=args.because,
+        )
+        print(f"accepted {len(drifted)} edit(s) into the journal.")
+        for item in drifted:
+            print(f"  {item.node}: {item.journaled!r} -> {item.actual!r}")
+        if not args.because:
+            print(
+                "\nno reason recorded. `--because` is what keeps a correction from "
+                "becoming\na thing that simply happened."
+            )
+        return 0
+
+    if args.json:
+        _emit([d.as_dict() for d in drifted], True)
+        return 1 if drifted else 0
+
+    if not drifted:
+        managed = len(journal.last_written(graph_dir))
+        if not managed:
+            print(
+                "nothing to compare against - trellis has not written any status yet.\n"
+                "drift is only detectable for nodes changed through `set` or `log`."
+            )
+        else:
+            print(f"no drift - all {managed} node(s) trellis has written still agree")
+        return 0
+
+    corrections = [d for d in drifted if d.is_correction]
+    print(f"{len(drifted)} node(s) changed outside trellis:\n")
+    for item in drifted:
+        mark = "!" if item.is_correction else "."
+        print(
+            f"  {mark} {item.node}: trellis wrote {item.journaled!r}, "
+            f"file says {item.actual!r}"
+        )
+        print(f"      last written {item.at}")
+    if corrections:
+        print(
+            f"\n{len(corrections)} of these walked a status backwards. Those are "
+            "corrections,\nand the reason for each was never recorded."
+        )
+    print(
+        "\ntrellis owns the state machine; edits made outside it are yours to "
+        "reconcile.\n"
+        "  trellis drift --accept --because '...'   record what the file now says\n"
+        "  trellis set <node> status=...            change it back through the loop"
+    )
+    return 1
 
 
 def cmd_deps(args) -> int:
@@ -933,6 +1029,17 @@ def build_parser() -> argparse.ArgumentParser:
         f"(default {evidence_mod.DEFAULT_STALE_DAYS})",
     )
     p.set_defaults(func=cmd_trust)
+
+    p = sub.add_parser(
+        "drift", help="what has been edited outside trellis since it last wrote"
+    )
+    p.add_argument(
+        "--accept",
+        action="store_true",
+        help="record the current file state in the journal, ending the drift",
+    )
+    p.add_argument("--because", metavar="REASON", help="why the edit was made")
+    p.set_defaults(func=cmd_drift)
 
     p = sub.add_parser(
         "doctor", help="everything that looks wrong, structural and evidential"
