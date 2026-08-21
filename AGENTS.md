@@ -285,6 +285,10 @@ that is the most useful sentence in the whole session.
 - `trellis graph --around <node>` — a mermaid slice to paste where someone else
   can read it. Useful when the person you need agreement from does not have
   trellis.
+- `trellis snapshot -m "why"` — freeze what the graph means now, for later.
+  **Never quote a snapshot as current state.** It is frozen by definition; if
+  someone asks how things are, run `state` or `doctor` instead. Say when a
+  snapshot was taken whenever you cite one.
 - `trellis drift` — has anything been changed around the tool since it last
   wrote? Worth running at the start of a session.
 - `trellis doctor` — run this more often than you think. Findings come ranked;
