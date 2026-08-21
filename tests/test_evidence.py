@@ -1022,3 +1022,48 @@ def test_html_embeds_the_graph_rather_than_pointing_at_it():
     assert "a --> b" in page
     assert "2026-01-01T00:00:00Z" in page
     assert "not a live view" in page
+
+
+def chain(length: int) -> Graph:
+    nodes = [{"id": "n0", "status": "done"}]
+    nodes += [
+        {"id": f"n{i}", "status": "not_started", "gates": {"start": f"n{i - 1}.done"}}
+        for i in range(1, length)
+    ]
+    return build(*nodes)
+
+
+def test_a_deep_chain_is_cut_rather_than_run_off_the_screen():
+    """Each level costs three columns, so depth runs out of screen long before
+    it runs out of nodes."""
+    from trellis import viz
+    from trellis.engine import Engine
+
+    graph = chain(60)
+    out = viz.tree(Engine(graph), set(graph.ids()))
+    assert max(len(line) for line in out.splitlines()) < 100
+    assert "more below" in out
+    assert "--around" in out
+
+
+def test_the_cut_says_how_much_it_cut():
+    from trellis import viz
+    from trellis.engine import Engine
+
+    graph = chain(30)
+    out = viz.tree(Engine(graph), set(graph.ids()), max_depth=5)
+    marker = next(line for line in out.splitlines() if "more below" in line)
+    # 30 nodes, 6 drawn (root plus five levels), so 24 are not
+    assert "24 more below" in marker
+
+
+def test_a_shallow_graph_is_never_cut():
+    from trellis import viz
+    from trellis.engine import Engine
+
+    graph = build(
+        {"id": "top", "status": "not_started", "gates": {"start": "a.done and b.done"}},
+        {"id": "a", "status": "done"},
+        {"id": "b", "status": "done"},
+    )
+    assert "more below" not in viz.tree(Engine(graph), set(graph.ids()))

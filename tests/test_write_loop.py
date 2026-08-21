@@ -1325,3 +1325,35 @@ def test_graph_writes_a_page_and_says_where(workspace, capsys, tmp_path):
     out = capsys.readouterr().out
     assert str(target) in out
     assert "nothing about your project leaves this machine" in out
+
+
+def test_the_readable_limit_depends_on_the_format(tmp_path, capsys):
+    """A tree is one line per node; a diagram stops being a picture far sooner."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    rows = ["nodes:"]
+    for i in range(60):
+        rows += [f"  - id: n{i}", f"    title: Node {i}", "    status: not_started"]
+        if i:
+            rows += ["    gates: {start: n" + str(i - 1) + ".done}"]
+    (graph_dir / "g.yaml").write_text("\n".join(rows) + "\n")
+
+    assert cli.main(["--graph", str(graph_dir), "graph"]) == 0  # tree copes
+    capsys.readouterr()
+
+    assert cli.main(["--graph", str(graph_dir), "graph", "-f", "mermaid"]) == 2
+    err = capsys.readouterr().err
+    assert "past the 40 that stay readable as mermaid" in err
+    assert "-f tree` reads fine" in err  # names the way out
+
+
+def test_force_still_overrides(tmp_path, capsys):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    rows = ["nodes:"]
+    for i in range(60):
+        rows += [f"  - id: n{i}", "    status: not_started"]
+    (graph_dir / "g.yaml").write_text("\n".join(rows) + "\n")
+    assert (
+        cli.main(["--graph", str(graph_dir), "graph", "-f", "mermaid", "--force"]) == 0
+    )
