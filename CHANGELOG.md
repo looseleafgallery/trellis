@@ -9,6 +9,18 @@ expensive to break.
 
 ## [Unreleased]
 
+### Added
+
+- `acknowledge:` on a node answers a finding for good. Acknowledged findings
+  are counted rather than hidden, stale acknowledgements are reported, and
+  errors cannot be acknowledged — a graph that cannot evaluate must not be able
+  to look clean.
+
+### Changed
+
+- Findings are ranked by what to fix first rather than only by severity, and
+  `check` ends by naming the one to start with.
+
 ### Fixed
 
 - Cycles caused by gating on your own ancestor's published fact, or by an

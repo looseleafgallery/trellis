@@ -52,20 +52,28 @@ def _emit(payload, as_json: bool) -> None:
 def cmd_check(args) -> int:
     graph, cache, _ = _load(args)
     engine = Engine(graph, cache)
-    problems = queries.check(graph, engine)
+    problems, muted = queries.check_with_muted(graph, engine)
     cache.save()
 
     if args.json:
         _emit([p.as_dict() for p in problems], True)
     else:
         if not problems:
-            print(f"ok - {len(graph)} nodes, no problems")
+            tail = f" ({muted} acknowledged)" if muted else ""
+            print(f"ok - {len(graph)} nodes, no problems{tail}")
         else:
-            order = {"error": 0, "warn": 1, "info": 2}
-            for p in sorted(problems, key=lambda p: (order.get(p.severity, 3), p.node)):
+            # Already ranked by check(): worst first, then most urgent.
+            for p in problems:
                 print(f"{p.severity:5} {p.node}: {p.message} [{p.code}]")
             errors = sum(1 for p in problems if p.severity == "error")
             print(f"\n{len(problems)} problem(s), {errors} error(s)")
+            if muted:
+                print(f"{muted} acknowledged and not shown")
+            first = problems[0]
+            print(f"\nstart with: {first.node} - {first.code}")
+            remedy = REMEDIES.get(first.code)
+            if remedy:
+                print(f"  -> {remedy}")
     return 1 if any(p.severity == "error" for p in problems) else 0
 
 
@@ -657,6 +665,7 @@ REMEDIES = {
     "depends_on_abandoned": "this requires work that is gone. Re-point it or drop it.",
     "dead_evidence": "the edge this justified no longer exists - remove the evidence.",
     "drift": "edited outside trellis - reconcile it with `set`, or accept it.",
+    "dead_acknowledgement": "this finding no longer fires - drop the acknowledge entry.",
     "cycle": "these depend on each other. One of the edges is wrong.",
     "dangling_reference": "names a node that does not exist. Typo, or not modelled yet?",
     "dangling_evidence": "evidence names a node that does not exist.",
@@ -689,8 +698,7 @@ def cmd_doctor(args) -> int:
     aged = evidence_mod.stale_verifications(claims, args.stale_after)
 
     findings: list[tuple[str, str, str]] = []
-    order = {"error": 0, "warn": 1, "info": 2}
-    for problem in sorted(problems, key=lambda p: (order.get(p.severity, 3), p.node)):
+    for problem in problems:  # check() ranks these already
         findings.append((problem.severity, problem.node, problem.message))
     for item in stale:
         findings.append(
@@ -784,6 +792,11 @@ def cmd_doctor(args) -> int:
         if remedy:
             print(f"      -> {remedy}")
     print("\nnone of this changed any state. these are questions, not corrections.")
+    print(
+        "if one of these is true and will stay true, answer it for good with "
+        "`acknowledge: [<code>]`\non the node - acknowledged findings are counted, "
+        "not hidden."
+    )
     return 1 if any(f[0] == "error" for f in findings) else 0
 
 

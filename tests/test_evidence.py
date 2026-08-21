@@ -584,3 +584,83 @@ def test_a_recognised_cycle_does_not_crash_the_derived_pass():
     )
     problems = queries.check(graph)  # must not raise
     assert any(p.code == "cycle_known_shape" for p in problems)
+
+
+# -- ranking and acknowledgement ---------------------------------------------
+
+
+def noisy_graph() -> Graph:
+    return build(
+        {"id": "spike", "status": "in_progress"},
+        {"id": "sys", "status": "in_progress"},
+        {"id": "sys.a", "parent": "sys", "status": "done"},
+        {
+            "id": "sys.b",
+            "parent": "sys",
+            "status": "not_started",
+            "gates": {"start": "sys.a.done and ghost.done"},
+        },
+    )
+
+
+def test_findings_are_ranked_by_what_to_fix_first():
+    """Severity says how bad; urgency says what to do first."""
+    problems = queries.check(noisy_graph())
+    assert problems[0].code == "dangling_reference"  # blocks evaluation entirely
+    codes = [p.code for p in problems]
+    assert codes.index("dangling_reference") < codes.index("inert_node")
+    # ranking is total and stable
+    assert problems == sorted(problems, key=lambda p: p.rank)
+
+
+def test_severity_still_outranks_urgency():
+    problems = queries.check(noisy_graph())
+    severities = [queries.SEVERITY_ORDER[p.severity] for p in problems]
+    assert severities == sorted(severities)
+
+
+def test_an_unknown_code_ranks_in_the_middle_rather_than_first_or_last():
+    p = queries.Problem("brand_new_code", "warn", "n", "")
+    assert p.rank[1] == queries.DEFAULT_URGENCY
+
+
+def test_acknowledging_a_true_but_permanent_finding_silences_it():
+    """Two spike-only projects correctly have no relationships. Saying so every
+    run is how a whole severity gets tuned out."""
+    graph = build(
+        {"id": "spike", "status": "in_progress", "acknowledge": ["inert_node"]},
+    )
+    codes = [p.code for p in queries.check(graph)]
+    assert "inert_node" not in codes
+    assert "unowned_node" in codes  # only what was acknowledged is silenced
+
+
+def test_acknowledged_findings_are_counted_not_hidden():
+    graph = build(
+        {"id": "spike", "status": "in_progress", "acknowledge": ["inert_node"]},
+    )
+    _kept, muted = queries.check_with_muted(graph)
+    assert muted == 1
+
+
+def test_an_acknowledgement_that_no_longer_fires_is_reported():
+    """Same idea as dead evidence: nothing else would ever tell you."""
+    graph = build(
+        {"id": "a", "status": "done", "acknowledge": ["inert_node"]},
+        {"id": "b", "status": "not_started", "gates": {"start": "a.done"}},
+    )
+    dead = [p for p in queries.check(graph) if p.code == "dead_acknowledgement"]
+    assert len(dead) == 1
+    assert "no longer fires" in dead[0].message
+
+
+def test_acknowledge_accepts_a_bare_string():
+    node = node_from_dict({"id": "a", "status": "done", "acknowledge": "inert_node"})
+    assert node.acknowledges("inert_node")
+
+
+def test_acknowledge_does_not_change_the_fingerprint():
+    """It changes what is reported, never what is computed."""
+    plain = node_from_dict({"id": "a", "status": "done"})
+    acked = node_from_dict({"id": "a", "status": "done", "acknowledge": ["inert_node"]})
+    assert plain.fingerprint() == acked.fingerprint()
