@@ -383,6 +383,22 @@ opposite things. A contract revised nine times is being negotiated; a node
 corrected twice was wrong twice, and what it claims now is worth less than what
 an uncorrected node claims. `trust` reports them separately for that reason.
 
+## When a session teaches you something
+
+Not every finding is a change. If working on a graph teaches you something that
+would otherwise be relearned — a message that misled, an edit that failed
+quietly, a rule nobody had written down — it needs a home, or it is gone when
+the session ends.
+
+For the trellis repository itself, that home is the "Lessons that cost us
+something" section of `CONTRIBUTING.md`. For a user's own graph, ask them where
+it belongs; a `notes:` field on the node it concerns is often right, and the
+reason on a correction is often better.
+
+The failure to avoid is leaving it in the conversation. A lesson only one
+session knows is a second place to be wrong, which is what this tool exists to
+remove.
+
 ## Mistakes to avoid
 
 - **Ending with "looks good."** Run `doctor` and report it. If it is silent on a
