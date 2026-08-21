@@ -36,7 +36,7 @@ nodes:
       agreement, not two. See #19.
 
   - id: contract.beliefs_in_the_model
-    ref: "#20"
+    ref: TRE-5  #20"
     title: Whether trellis models beliefs, not just commitments
     kind: contract
     status: draft

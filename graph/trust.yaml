@@ -43,7 +43,7 @@ nodes:
       applying it to our own output.
 
   - id: trust.calibration
-    ref: "#19"
+    ref: TRE-1  #19"
     title: Report how often unconfirmed edges were wrong
     parent: trust
     status: not_started
@@ -67,7 +67,7 @@ nodes:
       breaks the join and a parallel table cannot be deleted.
 
   - id: trust.external_grounding
-    ref: "#4"
+    ref: TRE-3  #4"
     title: Challenge a declaration with branch and PR state
     parent: trust
     status: not_started
@@ -81,7 +81,7 @@ nodes:
       integration - the value is in the challenge, not the coverage.
 
   - id: trust.structural_critique
-    ref: "#5"
+    ref: TRE-4  #5"
     title: Co-movement and fan-in
     parent: trust
     status: not_started
