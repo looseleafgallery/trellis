@@ -50,6 +50,7 @@ RESERVED_EXPORTS = frozenset(
         "complete",
         "superseded",
         "dead",
+        "awaiting",
     }
 )
 
@@ -137,6 +138,10 @@ class Node:
     publishes: tuple[tuple[str, object], ...] = ()
     # Provenance for this node's outgoing edges, keyed by referenced node.
     evidence: tuple[EdgeEvidence, ...] = ()
+    # What decision is owed before this can move. Free text on purpose: *who*
+    # owes it is a tracker's job and trellis stays out of that, but *that a
+    # decision is owed at all* is a property of the graph's shape.
+    awaiting: str = ""
     # Findings this node has answered for good. An accurate observation that
     # will never change is noise on the second run, and noise is how a whole
     # severity gets ignored. Acknowledged findings are counted, never hidden.
@@ -182,6 +187,9 @@ class Node:
             "version": self.version,
             "satisfied_by": list(self.satisfied_by),
             "publishes": [list(p) for p in self.publishes],
+            # In the fingerprint: unlike evidence or acknowledgements, this
+            # changes what the node's readiness *is*.
+            "awaiting": self.awaiting,
         }
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
@@ -204,6 +212,7 @@ def node_from_dict(data: dict, source: str = "") -> Node:
         "publishes",
         "evidence",
         "acknowledge",
+        "awaiting",
         "notes",
     }
     if unknown:
@@ -311,6 +320,7 @@ def node_from_dict(data: dict, source: str = "") -> Node:
         publishes=publishes,
         evidence=edge_evidence_t,
         acknowledge=acknowledge,
+        awaiting=str(data.get("awaiting") or "").strip(),
         notes=str(data.get("notes") or ""),
         source=source,
     )
@@ -461,6 +471,7 @@ class Graph:
                     e.target: {"how": e.how, "at": e.at} for e in base.evidence
                 },
                 "acknowledge": list(base.acknowledge),
+                "awaiting": base.awaiting,
                 "notes": base.notes,
             }
             if base.kind == "work":

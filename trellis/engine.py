@@ -26,11 +26,14 @@ from . import expr as expr_mod
 from .cache import Cache
 from .model import Graph, Node
 
-ENGINE_VERSION = 6
+ENGINE_VERSION = 7
 
 # Work readiness values, ordered from least to most progressed.
 READINESS = (
     "blocked",
+    # Not blocked by work: the gate is open and a person owes a decision. The
+    # same distinction contracts already draw between `unagreed` and `pending`.
+    "awaiting",
     "ready",
     "active",
     "unverified",
@@ -316,6 +319,7 @@ class Engine:
             "superseded": superseded,
             "dead": dead,
             "provides": list(node.provides) if done else [],
+            "awaiting": bool(node.awaiting),
             "children_done": children_done,
             "leaf_total": leaf_total,
             "leaf_done": leaf_done,
@@ -336,6 +340,10 @@ class Engine:
             readiness = "done"
         elif node.status == "in_progress":
             readiness = "active"
+        elif start_ok and node.awaiting:
+            # Blocked-by-work outranks this: if the gate is shut, the work is
+            # the truth. This is "would be ready except a person owes something".
+            readiness = "awaiting"
         elif start_ok:
             readiness = "ready"
         else:

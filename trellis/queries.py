@@ -47,6 +47,7 @@ URGENCY = {
     "unconsumed_contract": 4,
     "orphan_contract": 4,
     "rollup_lagging": 5,
+    "awaiting_decision": 3,
     "inert_node": 5,
     "unowned_node": 5,
 }
@@ -455,6 +456,16 @@ def collect(graph: Graph, engine: Engine | None = None) -> list[Problem]:
                 )
             continue
 
+        if node.awaiting and node.kind == "work":
+            problems.append(
+                Problem(
+                    "awaiting_decision",
+                    "info",
+                    node.id,
+                    f"waiting on a decision, not on work: {node.awaiting}",
+                )
+            )
+
         # A node that requires nothing and is required by nothing is a list
         # item wearing a node's clothes. Its only relationship is containment,
         # which the graph cannot compute anything from. Many of these at once
@@ -509,7 +520,11 @@ def collect(graph: Graph, engine: Engine | None = None) -> list[Problem]:
 
 
 def ready(engine: Engine, include_active: bool = False) -> list[Derived]:
-    """Work that can be picked up right now."""
+    """Work that can be picked up right now.
+
+    Excludes anything `awaiting` a decision: the gate is open, but a person
+    owes something, so nobody can actually pick it up.
+    """
     wanted = {"ready", "active"} if include_active else {"ready"}
     out = [
         d
@@ -567,6 +582,9 @@ class Reason:
 
 
 def _describe(derived: Derived) -> str:
+    if derived.readiness == "awaiting":
+        # A different push entirely: nothing here is waiting on engineering.
+        return "awaiting a decision, not blocked by work"
     return f"{derived.readiness} (status: {derived.status})"
 
 

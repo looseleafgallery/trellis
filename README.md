@@ -141,6 +141,25 @@ subset of Python syntax:
 agent.plan.done and contract.tool_schema.live and contract.tool_schema.version >= 2
 ```
 
+A work node can also be waiting on a *person* rather than on work:
+
+```yaml
+id: a.thing
+status: not_started
+awaiting: which of the two storage backends we standardise on
+```
+
+Its readiness becomes `awaiting`, and `trellis ready` excludes it — the gate is
+open, but nobody can pick it up until someone decides. This mirrors the split
+contracts already make between `unagreed` (waiting on people) and `pending`
+(waiting on work), which is one of the more useful things in the model and had
+no equivalent for work. Blocked-by-work still outranks it: if the gate is shut,
+the work is the truth.
+
+The text says *what* is owed, never *who* owes it — who is a tracker's job. It
+goes stale like any other declaration: a decision untouched for weeks is a
+decision nobody is making.
+
 `done_unverified` is complete-but-unchecked. It exports `done: false` and
 `complete: true`, so a gate saying `.done` stays conservative while one saying
 `.complete` proceeds at risk — and which you chose is visible in the gate.

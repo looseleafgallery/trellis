@@ -1018,3 +1018,29 @@ def test_acknowledge_write_refuses_a_block_list(tmp_path):
     with pytest.raises(edit.EditError, match="by hand"):
         edit.acknowledge(graph_dir, graph, "a", "inert_node")
     assert "- unowned_node" in (graph_dir / "g.yaml").read_text()
+
+
+def test_awaiting_is_writable_through_the_loop(workspace):
+    cli.main(
+        [
+            "--graph",
+            str(workspace),
+            "set",
+            "tools.streaming",
+            "awaiting=which serialisation format",
+            "-y",
+        ]
+    )
+    assert load_graph(workspace).get("tools.streaming").awaiting == (
+        "which serialisation format"
+    )
+
+
+def test_awaiting_is_cleared_when_the_decision_is_made(workspace):
+    cli.main(
+        ["--graph", str(workspace), "set", "tools.streaming", "awaiting=a call", "-y"]
+    )
+    cli.main(
+        ["--graph", str(workspace), "set", "tools.streaming", "awaiting=none", "-y"]
+    )
+    assert load_graph(workspace).get("tools.streaming").awaiting == ""
