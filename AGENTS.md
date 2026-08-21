@@ -281,6 +281,9 @@ that is the most useful sentence in the whole session.
   wrote? Worth running at the start of a session.
 - `trellis doctor` — run this more often than you think. Findings come ranked;
   the first one is the one to act on.
+- `trellis review` — the same findings as an interactive session, one at a
+  time. **This one is for the user, not for you**: it is where a person makes
+  the calls. Suggest it when `doctor` returns more than a handful of findings.
 
 If a finding is true and will stay true — a spike with no relationships, say —
 answer it for good on the node rather than re-reading it every run:

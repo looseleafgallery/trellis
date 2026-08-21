@@ -316,6 +316,35 @@ Every YAML example in `AGENTS.md` and this README is parsed by the test suite,
 so a doc that drifts from the schema fails CI rather than teaching an agent to
 write files that do not load.
 
+## Reviewing findings with a person in the loop
+
+`doctor` hands you a list and leaves you to go and edit files. `trellis review`
+is the same list as a session:
+
+```
+[1/7] warn  contract.x
+  still draft but 1 node(s) gate on it (consumer); nobody has agreed it
+  -> nobody has agreed this. Ask both sides whether it is settled.
+
+  [a] acknowledge  [x] explain  [e] edit  [s] skip  [q] quit
+```
+
+It does what it can do safely and routes everything else to you. `a` writes the
+acknowledgement and asks why, journaling both. `f` appears only where the
+remedy is an unambiguous status change, and goes through the normal preview and
+confirmation rather than around it. `e` opens `$EDITOR` at the node's line,
+because structural edits are not the writer's job. `x` runs `explain` without
+consuming the finding.
+
+Errors do not offer `a` at all — a defect is not an opinion.
+
+After any change the graph is re-read and the remaining findings recomputed, so
+a finding your last fix already resolved is skipped rather than shown. The
+position in the list is kept; its contents are not assumed.
+
+Interactive only. Non-interactively it points you at `doctor`, which reports
+the same findings.
+
 ## Trust
 
 Evaluation is the easy half. The half that decides whether anyone still uses
