@@ -59,6 +59,11 @@ expensive to break.
 
 ### Changed
 
+- `trellis graph` limits are per format and much higher: 120 nodes as a tree,
+  40 as a diagram. They are about readability rather than cost — 800 nodes
+  render in about a millisecond. Tree depth is capped at twelve levels, and a
+  cut branch says how many nodes are below it.
+
 - The journal moved from `.trellis/` to `history/`, which is committed. It is
   the only copy of why anything changed, and `.trellis/` is normally
   gitignored, so every recorded reason was local to one machine. The cache

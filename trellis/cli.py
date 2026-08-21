@@ -1215,12 +1215,20 @@ def cmd_graph(args) -> int:
     if not nodes:
         print("nothing in that slice", file=sys.stderr)
         return 1
-    if len(nodes) > args.max_nodes and not args.force:
+    # A tree is one line per node, so it stays scannable a long way past the
+    # point a diagram stops being a picture and starts being a wall.
+    limit = args.max_nodes or (120 if args.format == "tree" else 40)
+    if len(nodes) > limit and not args.force:
+        alternative = (
+            ""
+            if args.format == "tree"
+            else "\n`-f tree` reads fine at this size - it is one line per node."
+        )
         print(
-            f"error: that slice is {len(nodes)} nodes; a diagram that big is not "
-            f"readable.\n"
-            f"narrow it with --around <node>, --contracts, or --blocked, "
-            f"or pass --force.",
+            f"error: that slice is {len(nodes)} nodes, past the {limit} that stay "
+            f"readable as {args.format}.\n"
+            f"narrow it with --around <node>, --contracts, or --blocked, or pass "
+            f"--force.{alternative}",
             file=sys.stderr,
         )
         return 2
@@ -1560,7 +1568,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--contracts", action="store_true", help="contracts and who touches them"
     )
     p.add_argument("--blocked", action="store_true", help="only what is not moving")
-    p.add_argument("--max-nodes", type=int, default=25)
+    # Default depends on the format, because the limit is about readability and
+    # the two formats stop being readable at very different sizes. Rendering
+    # cost is not the constraint: 800 nodes render in ~1ms, and the load and
+    # evaluate that precede it take 0.1s, which happens whatever you ask for.
+    p.add_argument(
+        "--max-nodes",
+        type=int,
+        default=None,
+        help="override the readability limit (tree 120, mermaid and html 40)",
+    )
     p.add_argument("--force", action="store_true", help="render it anyway")
     p.add_argument("--raw", action="store_true", help="omit the markdown fence")
     p.add_argument(

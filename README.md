@@ -471,6 +471,13 @@ renders it inline. `html` writes a self-contained page; **the graph is written
 into the file**, so nothing about your project leaves the machine. Only mermaid
 itself is fetched, and only when you open the page.
 
+The size limits are about readability, not speed — rendering 800 nodes takes
+about a millisecond. A tree is one line per node and stays scannable to about
+120; a diagram stops being a picture nearer 40, so that is where each refuses
+without `--force`. Depth is capped separately at twelve levels, because each
+level costs three columns and a long chain runs off the screen well before it
+runs out of nodes; past that the branch is cut and says how much it cut.
+
 Emits mermaid inside a fenced block, so it pastes into an issue or a PR and
 renders for someone who does not have trellis installed. Arrows are drawn
 prerequisite → dependent, so the diagram reads the way the work flows.

@@ -153,7 +153,13 @@ def _slice_roots(graph: Graph, nodes: set[str]) -> list[str]:
     return roots or sorted(nodes)[:1]
 
 
-def tree(engine: Engine, nodes: set[str]) -> str:
+# Each level costs three columns, so a long chain runs off the screen well
+# before it runs out of nodes. Past this the branch is cut and said to be cut —
+# the alternative is a line nobody can read, which is worse than an admission.
+MAX_DEPTH = 12
+
+
+def tree(engine: Engine, nodes: set[str], max_depth: int = MAX_DEPTH) -> str:
     """The slice as a dependency tree, drawn for a terminal.
 
     A tree projection of a graph, which means a node needed by two others
@@ -169,7 +175,15 @@ def tree(engine: Engine, nodes: set[str]) -> str:
     rows: list[tuple[str, str, str]] = []
     expanded: set[str] = set()
 
-    def draw(node_id: str, prefix: str, connector: str, last: bool) -> None:
+    def remaining(node_id: str, seen: set[str]) -> int:
+        """How many distinct nodes hang below this one, for an honest cut."""
+        if node_id in seen:
+            return 0
+        seen.add(node_id)
+        below = [t for t in graph.references_of(node_id) if t in nodes]
+        return len(set(below) - seen) + sum(remaining(t, seen) for t in below)
+
+    def draw(node_id: str, prefix: str, connector: str, last: bool, depth: int) -> None:
         d = derived[node_id]
         node = graph.get(node_id)
         seen = node_id in expanded
@@ -181,14 +195,28 @@ def tree(engine: Engine, nodes: set[str]) -> str:
         expanded.add(node_id)
 
         children = sorted(t for t in graph.references_of(node_id) if t in nodes)
+        if not children:
+            return
         child_prefix = prefix + ("   " if last else "|  ") if connector else prefix
+
+        if depth >= max_depth:
+            left_over = remaining(node_id, set(expanded) - {node_id})
+            rows.append(
+                (
+                    f"{child_prefix}`- ...",
+                    f"{left_over} more below",
+                    "use --around to focus on part of this",
+                )
+            )
+            return
+
         for index, child in enumerate(children):
             is_last = index == len(children) - 1
-            draw(child, child_prefix, "`- " if is_last else "|- ", is_last)
+            draw(child, child_prefix, "`- " if is_last else "|- ", is_last, depth + 1)
 
     roots = _slice_roots(graph, nodes)
     for index, root in enumerate(roots):
-        draw(root, "", "", True)
+        draw(root, "", "", True, 0)
         if index != len(roots) - 1:
             rows.append(("", "", ""))
 
