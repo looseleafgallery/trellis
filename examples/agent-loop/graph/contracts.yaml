@@ -1,0 +1,28 @@
+nodes:
+  - id: contract.tool_schema
+    title: Tool call schema
+    kind: contract
+    status: agreed
+    version: 2
+    satisfied_by: [tools.registry, tools.sandbox]
+    notes: >
+      The agreement between the agent loop and the tooling subsystem. Both
+      sides reference this node rather than each other, so bumping the version
+      invalidates exactly its consumers and nothing else.
+
+  - id: contract.trace_format
+    title: Trace record format
+    kind: contract
+    status: agreed
+    version: 1
+    satisfied_by: [agent.ingest]
+
+  - id: contract.stage_handoff
+    title: Stage handoff envelope
+    kind: contract
+    status: proposed
+    version: 1
+    satisfied_by: [agent.plan, agent.reflect]
+    notes: >
+      Still proposed, so it is not live no matter how much work is done on the
+      stages that implement it. That is what keeps `agent.emit` blocked.

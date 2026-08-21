@@ -1,0 +1,34 @@
+nodes:
+  - id: tools
+    title: Tooling subsystem
+    kind: work
+    status: in_progress
+    publishes:
+      streaming_results: has(tools.streaming, "streaming-results")
+    notes: >
+      The published fact is this subsystem's interface. The agent loop gates on
+      `tools.streaming_results` rather than naming `tools.streaming` directly,
+      so the stages inside here can be split, renamed, or reordered without
+      breaking anything outside. `trellis check` flags reaching inside.
+
+  - id: tools.registry
+    title: Tool registry and discovery
+    parent: tools
+    status: done
+    provides: [tool-discovery]
+
+  - id: tools.sandbox
+    title: Sandboxed execution
+    parent: tools
+    status: in_progress
+    gates:
+      start: tools.registry.done
+    provides: [sandboxed-exec]
+
+  - id: tools.streaming
+    title: Streaming tool results
+    parent: tools
+    status: not_started
+    gates:
+      start: tools.sandbox.done and has(tools.registry, "tool-discovery")
+    provides: [streaming-results]

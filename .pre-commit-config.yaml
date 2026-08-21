@@ -1,0 +1,26 @@
+# Fast checks only. The full suite runs in CI; this is here to stop the
+# mechanical mistakes before they reach a commit.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.5
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+        # The example graphs are the fixtures the suite loads; a broken one
+        # should fail here rather than in a test.
+      - id: check-merge-conflict
+  - repo: local
+    hooks:
+      - id: docs-match-code
+        name: docs match code
+        entry: python -m pytest -q tests/test_docs.py
+        language: system
+        pass_filenames: false
+        files: '(AGENTS|README)\.md|trellis/.*\.py'

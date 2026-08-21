@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: check --output-format=github
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: format --check
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor is a claim in pyproject.toml; the matrix is what makes it true.
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      # The evidence layer shells out to git log, and the suite builds real
+      # repos with backdated commits — so history has to be present, not shallow.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Configure git for the evidence tests
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "ci"
+          git config --global init.defaultBranch main
+      - run: pip install -e '.[dev]'
+      - run: python -m pytest -q

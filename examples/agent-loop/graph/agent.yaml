@@ -1,0 +1,63 @@
+nodes:
+  - id: agent
+    title: Agent loop
+    kind: work
+    status: in_progress
+    notes: >
+      The pipeline itself. Its progress is rolled up from the stages below;
+      the status here is declared, so `check` will flag it if the stages are
+      all done and this is still open.
+
+  - id: agent.ingest
+    title: Ingest and normalize input
+    parent: agent
+    status: done
+    provides: [normalized-input]
+
+  - id: agent.plan
+    title: Planner stage
+    parent: agent
+    status: in_progress
+    gates:
+      start: agent.ingest.done and contract.trace_format.live
+    provides: [plan-objects]
+
+  - id: agent.tool_exec
+    title: Tool execution stage
+    parent: agent
+    status: not_started
+    gates:
+      start: >
+        agent.plan.done
+        and contract.tool_schema.live
+        and contract.tool_schema.version >= 2
+      finish: tools.streaming_results
+    provides: [tool-results]
+    notes: >
+      The finish gate is the interesting one: this stage can be started as
+      soon as the schema is live, but cannot be called done until the tools
+      subsystem publishes streaming results. Note it gates on the published
+      fact, not on the stage inside `tools` that produces it.
+
+  - id: agent.reflect
+    title: Reflection stage
+    parent: agent
+    status: not_started
+    gates:
+      start: agent.tool_exec.done and contract.trace_format.live
+    provides: [critique]
+
+  - id: agent.emit
+    title: Emit final response
+    parent: agent
+    status: not_started
+    gates:
+      start: agent.reflect.done and contract.stage_handoff.live
+    evidence:
+      agent.reflect: {how: verified, at: 2026-08-20}
+      contract.stage_handoff: inferred
+    notes: >
+      The two edges out of this node are believed for very different reasons,
+      and without `evidence:` they would read identically. The handoff edge was
+      inferred from a design discussion and never confirmed with either team -
+      `trust` and `explain` both say so.
