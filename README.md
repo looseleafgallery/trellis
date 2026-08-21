@@ -86,6 +86,45 @@ strict gates stay shut while permissive ones can proceed at risk. `superseded`
 is replaced-by-something-else rather than dropped, which changes whether you
 delete the node or keep it as a pointer.
 
+### Which item is this
+
+Every node in a real graph usually corresponds to something in a tracker.
+`ref:` is where that goes — one optional, opaque string:
+
+```yaml
+id: safety.d1
+title: External-gate contract v1
+ref: ENG-1552
+status: in_progress
+```
+
+trellis never fetches it, parses it, or assumes there is one tracker. It exists
+so a second document can *join* on the graph rather than restate it. Without a
+key to join on, the ticket id ends up inside the title, and a reworded title
+silently breaks every lookup — titles being the field most likely to be
+reworded.
+
+Once a node has one, the ref works anywhere a node id does:
+
+```bash
+trellis state ENG-1552
+```
+
+Node ids always win, and a ref naming two nodes resolves to neither — it says
+which two, because picking one would be inventing an answer the graph does not
+have. `check` reports a shared ref as `duplicate_ref` rather than refusing the
+graph: splitting one ticket across two nodes is a legitimate thing to have
+done, and only the join is ambiguous. `trellis state --ref` shows the column,
+`--json` carries it on every node record, and snapshots keep it so a frozen
+record stays joinable.
+
+Quote a ref that starts with `#`, or YAML reads it as a comment: `ref: "#39"`.
+
+**This is identity, not grounding.** It says *which thing this is*, never *is
+this claim still true* — no status is ever set from it. There is deliberately
+no `owner:` field to go with it; who a piece of work waits on is a tracker's
+job, and `awaiting:` already covers the case where a decision is owed.
+
 ## Published facts
 
 A subsystem declares the facts it offers the rest of the graph. Everything else
@@ -193,7 +232,7 @@ you find out two subsystems disagreed about what "done" meant.
 | | |
 |---|---|
 | `trellis check` | validate the graph; list every violation |
-| `trellis state [node]` | derived state, as a tree or for one node |
+| `trellis state [node]` | derived state, as a tree or for one node (`--ref` shows external ids) |
 | `trellis ready` | work whose start gate is satisfied right now |
 | `trellis explain <node>` | why it is blocked, down to root causes |
 | `trellis impact <node> --set status=done` | what-if: diff the whole system |
@@ -205,7 +244,8 @@ you find out two subsystems disagreed about what "done" meant.
 | `trellis doctor` | everything that looks wrong, with what to do about it |
 | `trellis stats` | cache and recomputation counters |
 
-Add `--json` to any of them.
+Add `--json` to any of them. Anywhere a command takes `<node>`, a `ref:` that
+names exactly one node works too.
 
 `impact` is the one that answers "I moved one piece, what happens":
 

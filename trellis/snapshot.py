@@ -94,6 +94,10 @@ def capture(graph_dir: str | Path, engine: Engine, message: str = "") -> dict:
         "summary": queries.summary(engine),
         "nodes": {nid: d.as_dict() for nid, d in derived.items()},
         "titles": {n.id: n.title for n in graph},
+        # So a frozen record stays joinable to whatever addressed the work at
+        # the time. A renderer handing someone a report they can act on needs
+        # the ids they already think in.
+        "refs": graph.refs(),
         "findings": [p.as_dict() for p in problems],
         "acknowledged": muted,
         "trust": {

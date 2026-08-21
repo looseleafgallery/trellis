@@ -11,6 +11,19 @@ expensive to break.
 
 ### Added
 
+- `ref:` on a node records which external item it *is* — a ticket id, a URL,
+  whatever the rest of your world addresses the work by. Opaque and optional:
+  never fetched, never parsed, no assumption there is one tracker. A ref works
+  anywhere a node id does (`trellis state ENG-1552`), node ids always win, and
+  a ref naming two nodes resolves to neither rather than guessing. `state
+  --ref` shows the column, `--json` carries it on every node record, snapshots
+  keep it, and `set <node> ref=...` writes it through the normal loop. `check`
+  reports a shared ref as `duplicate_ref` (info, not an error — splitting one
+  ticket across two nodes is legitimate; only the join is ambiguous). Excluded
+  from the fingerprint, so annotating a graph invalidates no cache entry.
+  Identity, not grounding: it says which thing this is, never whether the
+  claim still holds.
+
 - `awaiting:` on a work node records that a decision is owed before it can
   move. Readiness becomes `awaiting` rather than `ready`, `trellis ready`
   excludes it, `explain` says *waiting on a decision, not blocked by work*, and

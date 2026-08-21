@@ -4,6 +4,7 @@ nodes:
     status: in_progress
 
   - id: hitl.proposal_queue
+    ref: "#27"
     title: Propose now, decide later
     parent: hitl
     status: not_started
@@ -14,5 +15,5 @@ nodes:
       contract.durable_state_home: stated
       contract.reconcile_outcome: inferred
     notes: >
-      #27. Startable once state has a home; not finishable until accept and
+      Startable once state has a home; not finishable until accept and
       reject record their outcome the same way calibration does.

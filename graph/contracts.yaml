@@ -36,6 +36,7 @@ nodes:
       agreement, not two. See #19.
 
   - id: contract.beliefs_in_the_model
+    ref: "#20"
     title: Whether trellis models beliefs, not just commitments
     kind: contract
     status: draft
@@ -46,4 +47,4 @@ nodes:
       key, which is the property that makes the engine trustworthy. Keeping it
       in the trust layer keeps the engine honest but gives up the useful gate.
       This is the one that decides whether the roadmap goes further into
-      beliefs at all. See #20.
+      beliefs at all.

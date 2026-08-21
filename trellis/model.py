@@ -142,6 +142,16 @@ class Node:
     # owes it is a tracker's job and trellis stays out of that, but *that a
     # decision is owed at all* is a property of the graph's shape.
     awaiting: str = ""
+    # Which external item this node *is*: a ticket id, a URL, whatever the rest
+    # of your world addresses this work by. Opaque on purpose — trellis never
+    # fetches it, parses it, or assumes there is one tracker. It exists so a
+    # second document can join on the graph instead of restating it.
+    #
+    # Identity, not grounding: this says *which thing is this*, never *is this
+    # claim still true*. Excluded from the fingerprint for the same reason
+    # `title` is — knowing a node's ticket number cannot change what the node
+    # derives.
+    ref: str = ""
     # Findings this node has answered for good. An accurate observation that
     # will never change is noise on the second run, and noise is how a whole
     # severity gets ignored. Acknowledged findings are counted, never hidden.
@@ -171,11 +181,11 @@ class Node:
     def fingerprint(self) -> str:
         """Hash of the semantic declared fields.
 
-        Excludes `title`, `notes`, `source`, `evidence`, and `acknowledge`: none
-        of them can
-        change a derived value. Provenance in particular affects only how a
-        result is *reported*, so annotating an edge must not invalidate a cache
-        entry — otherwise nobody would annotate anything.
+        Excludes `title`, `ref`, `notes`, `source`, `evidence`, and
+        `acknowledge`: none of them can change a derived value. Provenance in
+        particular affects only how a result is *reported*, so annotating an
+        edge must not invalidate a cache entry — otherwise nobody would
+        annotate anything.
         """
         payload = {
             "id": self.id,
@@ -225,6 +235,7 @@ def node_from_dict(data: dict, source: str = "") -> Node:
         "evidence",
         "acknowledge",
         "awaiting",
+        "ref",
         "notes",
     }
     if unknown:
@@ -333,6 +344,10 @@ def node_from_dict(data: dict, source: str = "") -> Node:
         evidence=edge_evidence_t,
         acknowledge=acknowledge,
         awaiting=str(data.get("awaiting") or "").strip(),
+        # Not validated beyond being a string. A tracker id, a URL and a
+        # spreadsheet row are all legitimate here, and a schema that guessed
+        # between them would be wrong for somebody.
+        ref=str(data.get("ref") or "").strip(),
         notes=str(data.get("notes") or ""),
         source=source,
     )
@@ -357,6 +372,16 @@ class Graph:
             kids.sort()
         self._deps_cache: dict[str, tuple[str, ...]] = {}
         self._ref_cache: dict[str, tuple[str, ...]] = {}
+        # External id -> the nodes carrying it. A list rather than a single id
+        # because two nodes may honestly share a ticket, and refusing to load
+        # that graph would be asserting something we cannot know. `check`
+        # reports the ambiguity instead.
+        self._by_ref: dict[str, list[str]] = {}
+        for nid, node in nodes.items():
+            if node.ref:
+                self._by_ref.setdefault(node.ref, []).append(nid)
+        for ids in self._by_ref.values():
+            ids.sort()
 
     def __contains__(self, node_id: object) -> bool:
         return node_id in self.nodes
@@ -375,6 +400,20 @@ class Graph:
 
     def ids(self) -> list[str]:
         return sorted(self.nodes)
+
+    def by_ref(self, ref: str) -> tuple[str, ...]:
+        """Nodes declaring this external id, in id order.
+
+        Empty when nothing claims it — the caller decides whether that is worth
+        saying. Going this direction is the whole point of the field: given a
+        ticket id from the system you already use, find the node without
+        grepping titles, which break the moment somebody rewords one.
+        """
+        return tuple(self._by_ref.get(ref, ()))
+
+    def refs(self) -> dict[str, str]:
+        """Every declared external id, keyed by node."""
+        return {nid: n.ref for nid, n in self.nodes.items() if n.ref}
 
     def children_of(self, node_id: str) -> tuple[str, ...]:
         return tuple(self._children.get(node_id, ()))

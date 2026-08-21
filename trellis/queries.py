@@ -51,6 +51,7 @@ URGENCY = {
     "orphan_contract": 4,
     "rollup_lagging": 5,
     "awaiting_decision": 3,
+    "duplicate_ref": 4,
     "inert_node": 5,
     "unowned_node": 5,
 }
@@ -534,6 +535,23 @@ def collect(
                     node.id,
                     "requires nothing and nothing requires it - it carries no "
                     "relationship the graph can use",
+                )
+            )
+
+        # Two nodes claiming the same external item. Not an error: splitting
+        # one ticket across two nodes is a legitimate thing to have done. But
+        # anything joining on the ref gets two rows for one id and cannot tell
+        # which was meant, so say it once rather than let the join be silently
+        # ambiguous.
+        if node.ref and len(graph.by_ref(node.ref)) > 1:
+            others = [n for n in graph.by_ref(node.ref) if n != node.id]
+            problems.append(
+                Problem(
+                    "duplicate_ref",
+                    "info",
+                    node.id,
+                    f"ref {node.ref!r} is also declared by "
+                    f"{', '.join(others)} - a lookup by it is ambiguous",
                 )
             )
 
