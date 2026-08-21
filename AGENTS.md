@@ -191,11 +191,21 @@ that is the most useful sentence in the whole session.
   recovered later. Always pass `--because`, or answer the prompt. See below.
 - `trellis trust` — what is stale, what churns, which edges were never
   confirmed.
+- `trellis drift` — has anything been changed around the tool since it last
+  wrote? Worth running at the start of a session.
 - `trellis doctor` — run this more often than you think.
 
 **Never edit the YAML directly to change a status.** Use `set`, so the change is
 previewed, verified, and journaled with the reason. Direct edits are for
 structure (gates, contracts, published facts) only.
+
+trellis owns the state machine. If a status is edited around it — by you, by
+the user, by another tool — that is **drift**, and it is the editor's to
+reconcile, not something the tool silently absorbs. Run `trellis drift` to see
+it. If the user made the edit deliberately, `trellis drift --accept --because
+"..."` records what the file now says and why. Never accept drift on the user's
+behalf without asking why it happened: the reason is the whole point, and it is
+the part a hand edit threw away.
 
 ## Corrections
 

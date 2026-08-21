@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .model import is_retreat
+from .model import Graph, is_retreat
 
 JOURNAL_NAME = "journal.jsonl"
 
@@ -117,3 +117,68 @@ def correction_counts(graph_dir: str | Path) -> dict[str, int]:
     for item in corrections(graph_dir):
         counts[item.node] = counts.get(item.node, 0) + 1
     return counts
+
+
+@dataclass
+class Drift:
+    """A node whose file disagrees with the last thing trellis wrote to it.
+
+    trellis owns the state machine. Editing a status by hand is allowed and
+    sometimes the right thing, but it happens outside the loop: no preview, no
+    verification, no journal entry, and — when the edit walks a status
+    backwards — no recorded reason. That is drift, and it is the editor's to
+    own. All this does is refuse to let it stay invisible.
+    """
+
+    node: str
+    journaled: object
+    actual: object
+    at: str
+
+    @property
+    def is_correction(self) -> bool:
+        """Whether the hand edit walked the status backwards.
+
+        Worse than ordinary drift: a correction carries a lesson, and this one
+        was never written down.
+        """
+        return is_retreat(self.journaled, self.actual)
+
+    def as_dict(self) -> dict:
+        return {
+            "node": self.node,
+            "journaled": self.journaled,
+            "actual": self.actual,
+            "at": self.at,
+            "is_correction": self.is_correction,
+        }
+
+
+def last_written(graph_dir: str | Path) -> dict[str, tuple[object, str]]:
+    """The last status trellis itself wrote for each node, and when."""
+    out: dict[str, tuple[object, str]] = {}
+    for entry in read(graph_dir):
+        for write in entry.get("writes") or []:
+            if write.get("field") != "status":
+                continue
+            node = write.get("node")
+            if node:
+                out[node] = (write.get("after"), entry.get("at", ""))
+    return out
+
+
+def drift(graph_dir: str | Path, graph: Graph) -> list[Drift]:
+    """Nodes edited outside the loop since trellis last wrote them.
+
+    Only nodes trellis has actually written are considered. A node that has
+    never been through `set` or `log` is not drifting — it is simply not being
+    managed through the tool, which is a different thing and not a complaint.
+    """
+    out: list[Drift] = []
+    for node_id, (written, at) in last_written(graph_dir).items():
+        if node_id not in graph:
+            continue
+        actual = graph.get(node_id).status
+        if actual != written:
+            out.append(Drift(node=node_id, journaled=written, actual=actual, at=at))
+    return sorted(out, key=lambda d: (not d.is_correction, d.node))

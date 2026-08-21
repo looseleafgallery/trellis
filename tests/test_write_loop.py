@@ -673,3 +673,144 @@ def test_history_shows_why(workspace, capsys):
     capsys.readouterr()
     cli.main(["--graph", str(workspace), "history"])
     assert "why: tests never run" in capsys.readouterr().out
+
+
+# -- drift: edits made outside the loop --------------------------------------
+
+
+def hand_edit(graph_dir, node, to, path_name="tools.yaml"):
+    """Change one node's status by editing the file, exactly as a person would.
+
+    Targets the node's own block: several nodes in this file share a status
+    value, so a plain string replace would edit whichever came first.
+    """
+    path = graph_dir / path_name
+    lines = path.read_text().splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == f"- id: {node}")
+    for i in range(start + 1, len(lines)):
+        if lines[i].strip().startswith("- id:"):
+            raise AssertionError(f"{node} has no status line")
+        if lines[i].strip().startswith("status:"):
+            indent = " " * (len(lines[i]) - len(lines[i].lstrip()))
+            lines[i] = f"{indent}status: {to}"
+            break
+    path.write_text("\n".join(lines) + "\n")
+
+
+def test_no_drift_before_trellis_has_written_anything(workspace):
+    assert journal.drift(workspace, load_graph(workspace)) == []
+
+
+def test_a_node_never_written_through_trellis_is_not_drifting(workspace):
+    """Not being managed by the tool is a different thing from disagreeing with it."""
+    cli.main(["--graph", str(workspace), "set", "tools.sandbox", "status=done", "-y"])
+    hand_edit(workspace, "tools.streaming", "in_progress")  # never written by trellis
+    drifted = journal.drift(workspace, load_graph(workspace))
+    assert [d.node for d in drifted] == []
+
+
+def test_a_hand_edit_after_a_write_is_drift(workspace):
+    cli.main(["--graph", str(workspace), "set", "tools.sandbox", "status=done", "-y"])
+    hand_edit(workspace, "tools.sandbox", "in_progress")
+
+    drifted = journal.drift(workspace, load_graph(workspace))
+    assert len(drifted) == 1
+    assert drifted[0].node == "tools.sandbox"
+    assert drifted[0].journaled == "done"
+    assert drifted[0].actual == "in_progress"
+
+
+def test_a_hand_edit_walking_backwards_is_an_unrecorded_correction(workspace):
+    cli.main(["--graph", str(workspace), "set", "tools.sandbox", "status=done", "-y"])
+    hand_edit(workspace, "tools.sandbox", "in_progress")
+    assert journal.drift(workspace, load_graph(workspace))[0].is_correction
+
+
+def test_a_hand_edit_moving_forward_is_drift_but_not_a_correction(workspace):
+    cli.main(
+        ["--graph", str(workspace), "set", "tools.sandbox", "status=not_started", "-y"]
+    )
+    hand_edit(workspace, "tools.sandbox", "done")
+    drifted = journal.drift(workspace, load_graph(workspace))
+    assert len(drifted) == 1 and not drifted[0].is_correction
+
+
+def test_set_cannot_reconcile_drift_because_it_is_a_noop(workspace, capsys):
+    """The file already says what you would set it to, so there is nothing to do.
+
+    This is why accepting is a separate act rather than "just run set again".
+    """
+    cli.main(["--graph", str(workspace), "set", "tools.sandbox", "status=done", "-y"])
+    hand_edit(workspace, "tools.sandbox", "in_progress")
+    capsys.readouterr()
+
+    cli.main(
+        ["--graph", str(workspace), "set", "tools.sandbox", "status=in_progress", "-y"]
+    )
+    assert "nothing to change" in capsys.readouterr().out
+    assert journal.drift(workspace, load_graph(workspace))
+
+
+def test_accepting_records_the_edit_and_ends_the_drift(workspace):
+    cli.main(["--graph", str(workspace), "set", "tools.sandbox", "status=done", "-y"])
+    hand_edit(workspace, "tools.sandbox", "in_progress")
+
+    cli.main(
+        [
+            "--graph",
+            str(workspace),
+            "drift",
+            "--accept",
+            "--because",
+            "reverted by hand while debugging",
+        ]
+    )
+    assert journal.drift(workspace, load_graph(workspace)) == []
+    entry = journal.read(workspace)[-1]
+    assert entry["origin"] == "accept"
+    assert entry["reason"] == "reverted by hand while debugging"
+
+
+def test_accepting_without_a_reason_says_what_was_lost(workspace, capsys):
+    cli.main(["--graph", str(workspace), "set", "tools.sandbox", "status=done", "-y"])
+    hand_edit(workspace, "tools.sandbox", "in_progress")
+    capsys.readouterr()
+
+    cli.main(["--graph", str(workspace), "drift", "--accept"])
+    assert "no reason recorded" in capsys.readouterr().out
+
+
+def test_changing_it_back_through_the_loop_also_clears_drift(workspace):
+    cli.main(["--graph", str(workspace), "set", "tools.sandbox", "status=done", "-y"])
+    hand_edit(workspace, "tools.sandbox", "in_progress")
+
+    cli.main(["--graph", str(workspace), "set", "tools.sandbox", "status=done", "-y"])
+    assert journal.drift(workspace, load_graph(workspace)) == []
+
+
+def test_drift_command_exits_nonzero_and_explains_ownership(workspace, capsys):
+    cli.main(["--graph", str(workspace), "set", "tools.sandbox", "status=done", "-y"])
+    hand_edit(workspace, "tools.sandbox", "in_progress")
+    capsys.readouterr()
+
+    assert cli.main(["--graph", str(workspace), "drift"]) == 1
+    out = capsys.readouterr().out
+    assert "changed outside trellis" in out
+    assert "yours to reconcile" in out
+    assert "walked a status backwards" in out
+
+
+def test_drift_command_is_honest_when_it_cannot_tell(workspace, capsys):
+    assert cli.main(["--graph", str(workspace), "drift"]) == 0
+    assert "nothing to compare against" in capsys.readouterr().out
+
+
+def test_doctor_reports_an_unrecorded_correction_as_a_warning(workspace, capsys):
+    cli.main(["--graph", str(workspace), "set", "tools.sandbox", "status=done", "-y"])
+    hand_edit(workspace, "tools.sandbox", "in_progress")
+    capsys.readouterr()
+
+    cli.main(["--graph", str(workspace), "doctor"])
+    out = capsys.readouterr().out
+    assert "outside trellis" in out
+    assert "its reason is gone" in out
