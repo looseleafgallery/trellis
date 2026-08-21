@@ -40,6 +40,36 @@ _STYLES = """    classDef blocked fill:#fde2e2,stroke:#b04141,color:#5c1a1a;
     classDef muted fill:#f4f4f4,stroke:#bbbbbb,color:#888888;"""
 
 
+_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>trellis - {title}</title>
+<style>
+  body {{ font: 15px/1.5 system-ui, sans-serif; margin: 2rem; color: #222; }}
+  header {{ color: #666; font-size: 13px; margin-bottom: 1.5rem; }}
+</style>
+<header>{title} &middot; rendered {when} &middot; this is a picture of a moment,
+not a live view</header>
+<pre class="mermaid">
+{body}
+</pre>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+mermaid.initialize({{ startOnLoad: true }});
+</script>
+"""
+
+
+def html(engine: Engine, nodes: set[str], title: str, when: str) -> str:
+    """A self-contained page that draws the slice.
+
+    The graph never leaves the machine — it is written into the file. Only
+    mermaid itself is fetched, and only when you open the page. Worth knowing
+    before opening it somewhere without a network, and worth knowing that it
+    does not phone home with your project structure.
+    """
+    return _HTML.format(title=title, when=when, body=mermaid(engine, nodes))
+
+
 def _safe(node_id: str) -> str:
     return node_id.replace(".", "_").replace("-", "_")
 
@@ -90,6 +120,88 @@ def select(
             if derived[n].readiness in ("blocked", "draft", "unagreed", "pending")
         }
     return chosen
+
+
+# Readiness -> a one-character mark. Same vocabulary the tree in `state` uses,
+# because two different symbol sets for the same idea is worse than none.
+MARKS = {
+    "blocked": "x",
+    "awaiting": "?",
+    "ready": ">",
+    "active": "~",
+    "unverified": "*",
+    "done": "+",
+    "superseded": "-",
+    "abandoned": "-",
+    "live": "+",
+    "pending": "~",
+    "unagreed": ".",
+    "draft": ".",
+}
+
+
+def _slice_roots(graph: Graph, nodes: set[str]) -> list[str]:
+    """Nodes in the slice that nothing else in the slice requires.
+
+    The ends of the flow: start there and walk down to what they wait on, which
+    is the direction a person reads when asking why something has not moved.
+    """
+    required = {t for n in nodes for t in graph.references_of(n) if t in nodes}
+    roots = sorted(nodes - required)
+    # A slice that is entirely one cycle has no root; start somewhere rather
+    # than drawing nothing.
+    return roots or sorted(nodes)[:1]
+
+
+def tree(engine: Engine, nodes: set[str]) -> str:
+    """The slice as a dependency tree, drawn for a terminal.
+
+    A tree projection of a graph, which means a node needed by two others
+    appears twice — the second marked rather than redrawn, the same way
+    `explain` handles a shared branch. That is a deliberate trade: a general
+    DAG layout in fixed-width characters becomes unreadable at exactly the size
+    where you need it, and an honest repeat costs one line.
+    """
+    graph = engine.graph
+    derived = engine.all_derived()
+    # Laid out in two passes: the branch column varies in width with depth, so
+    # the status column can only be aligned once every row exists.
+    rows: list[tuple[str, str, str]] = []
+    expanded: set[str] = set()
+
+    def draw(node_id: str, prefix: str, connector: str, last: bool) -> None:
+        d = derived[node_id]
+        node = graph.get(node_id)
+        seen = node_id in expanded
+        left = f"{prefix}{connector}{MARKS.get(d.readiness, '?')} {node_id}"
+        title = node.title if node.title != node_id else ""
+        rows.append((left, d.readiness + ("  (above)" if seen else ""), title))
+        if seen:
+            return
+        expanded.add(node_id)
+
+        children = sorted(t for t in graph.references_of(node_id) if t in nodes)
+        child_prefix = prefix + ("   " if last else "|  ") if connector else prefix
+        for index, child in enumerate(children):
+            is_last = index == len(children) - 1
+            draw(child, child_prefix, "`- " if is_last else "|- ", is_last)
+
+    roots = _slice_roots(graph, nodes)
+    for index, root in enumerate(roots):
+        draw(root, "", "", True)
+        if index != len(roots) - 1:
+            rows.append(("", "", ""))
+
+    branch = max((len(left) for left, _, _ in rows), default=0)
+    status = max((len(state) for _, state, _ in rows), default=0)
+    lines = []
+    for left, state, title in rows:
+        if not left:
+            lines.append("")
+            continue
+        line = f"{left.ljust(branch)}  {state.ljust(status)}"
+        lines.append(f"{line}  {title}".rstrip())
+    return "\n".join(lines)
 
 
 def mermaid(engine: Engine, nodes: set[str]) -> str:

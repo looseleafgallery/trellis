@@ -327,8 +327,8 @@ that is the most useful sentence in the whole session.
   **Never quote the second as the first** — they answer different questions,
   and conflating them is how people misreport their own graph.
 - `trellis blocking --all` — chokepoints, ranked.
-- `trellis graph --around <node>` — a mermaid slice to paste where someone else
-  can read it. Useful when the person you need agreement from does not have
+- `trellis graph --around <node>` — draws in the terminal. Add `-f mermaid`
+  for a slice to paste where someone else can read it. Useful when the person you need agreement from does not have
   trellis.
 - `trellis snapshot -m "why"` — freeze what the graph means now, for later.
   **Never quote a snapshot as current state.** It is frozen by definition; if

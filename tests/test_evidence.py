@@ -951,3 +951,74 @@ def test_a_directory_outside_any_repo_is_known_to_be_outside(tmp_path):
     bare = tmp_path / "graph"
     bare.mkdir()
     assert not evidence.in_git(bare)
+
+
+# -- drawing for a person at a terminal --------------------------------------
+
+
+def test_the_tree_reads_top_down_from_what_waits_to_what_it_waits_on():
+    from trellis import viz
+    from trellis.engine import Engine
+
+    engine = Engine(pipeline())
+    out = viz.tree(engine, {"a", "b", "c"})
+    lines = [line for line in out.splitlines() if line.strip()]
+    # c waits on b waits on a, so c leads and a is deepest
+    assert lines[0].startswith("~ c") or lines[0].startswith("x c")
+    assert "a" in lines[-1]
+    assert lines[-1].startswith(" ") or "-" in lines[-1]
+
+
+def test_a_node_needed_twice_is_marked_rather_than_redrawn():
+    """A tree projection of a graph: the repeat is honest and costs one line."""
+    from trellis import viz
+    from trellis.engine import Engine
+
+    graph = build(
+        {"id": "shared", "status": "done"},
+        {"id": "l", "status": "not_started", "gates": {"start": "shared.done"}},
+        {"id": "r", "status": "not_started", "gates": {"start": "shared.done"}},
+        {"id": "top", "status": "not_started", "gates": {"start": "l.done and r.done"}},
+    )
+    out = viz.tree(Engine(graph), set(graph.ids()))
+    assert out.count("(above)") == 1
+    assert out.count("shared") == 2
+
+
+def test_the_status_column_stays_aligned_at_depth():
+    from trellis import viz
+    from trellis.engine import Engine
+
+    out = viz.tree(Engine(pipeline()), {"a", "b", "c", "d", "z"})
+    columns = {
+        line.index(state)
+        for line in out.splitlines()
+        if line.strip()
+        for state in ["blocked", "ready", "active", "done"]
+        if state in line
+    }
+    assert len(columns) == 1, f"status column drifts: {columns}"
+
+
+def test_a_slice_with_no_root_still_draws():
+    """Every node required by another leaves no head to start from."""
+    from trellis import viz
+    from trellis.engine import Engine
+
+    graph = build(
+        {"id": "a", "status": "done"},
+        {"id": "b", "status": "not_started", "gates": {"start": "a.done"}},
+    )
+    assert viz.tree(Engine(graph), {"a"}).strip()
+
+
+def test_html_embeds_the_graph_rather_than_pointing_at_it():
+    """Nothing about the project leaves the machine; only mermaid is fetched."""
+    from trellis import viz
+    from trellis.engine import Engine
+
+    page = viz.html(Engine(pipeline()), {"a", "b"}, "slice", "2026-01-01T00:00:00Z")
+    assert "flowchart LR" in page
+    assert "a --> b" in page
+    assert "2026-01-01T00:00:00Z" in page
+    assert "not a live view" in page

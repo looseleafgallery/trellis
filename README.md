@@ -423,13 +423,41 @@ cannot drift apart.
 `trellis blocking --all` ranks every open node by what it is holding up —
 chokepoints, without having to guess where to look.
 
-### A picture, for the person you are trying to agree with
+### A picture
 
 ```bash
-trellis graph --contracts          # contracts and whoever touches them
 trellis graph --around agent.plan --hops 2
+trellis graph --contracts          # contracts and whoever touches them
 trellis graph --blocked            # only what is not moving
 ```
+
+Draws in the terminal by default:
+
+```
+x agent.reflect               blocked  Reflection stage
+`- x agent.tool_exec          blocked  Tool execution stage
+   |- ~ agent.plan            active   Planner stage
+   |- ~ contract.tool_schema  pending  Tool call schema
+   `- ~ tools                 active   Tooling subsystem
+```
+
+Top-down from what is waiting to what it waits on. It is a *tree* projection of
+a graph, so a node needed by two things appears twice — the second marked
+`(above)` rather than redrawn. That is deliberate: a general graph layout in
+fixed-width characters becomes unreadable at exactly the size where you need
+it, and an honest repeat costs one line.
+
+Two other formats:
+
+```bash
+trellis graph --contracts -f mermaid   # source, to paste into an issue or PR
+trellis graph --contracts -f html      # a page you can open
+```
+
+`mermaid` is what you want for someone who does not have trellis — GitHub
+renders it inline. `html` writes a self-contained page; **the graph is written
+into the file**, so nothing about your project leaves the machine. Only mermaid
+itself is fetched, and only when you open the page.
 
 Emits mermaid inside a fenced block, so it pastes into an issue or a PR and
 renders for someone who does not have trellis installed. Arrows are drawn
