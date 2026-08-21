@@ -126,7 +126,7 @@ def test_builtin_renderers_need_no_configuration(project):
 def test_every_asset_carries_its_own_as_of(project):
     """An artifact that travels away from the index still has to say when."""
     entry, _ = take(project, renderers_wanted=["mermaid"])
-    rendered = [a for a in entry.assets if a["renderer"] == "mermaid"][0]
+    rendered = next(a for a in entry.assets if a["renderer"] == "mermaid")
     assert rendered["taken_at"] == entry.taken_at
 
 
