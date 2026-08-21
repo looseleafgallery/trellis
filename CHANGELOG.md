@@ -9,6 +9,20 @@ expensive to break.
 
 ## [Unreleased]
 
+### Fixed
+
+- Cycles caused by gating on your own ancestor's published fact, or by an
+  implementer gating on the contract it satisfies, now name the mistake and the
+  fix rather than only the topology (#11, #12).
+- `unconsumed_contract` no longer fires when the only node gating on a contract
+  is its own implementer — it contradicted the cycle reported alongside it
+  (#12). Contract demand is now measured by references rather than by
+  dependents, so a parent no longer counts as a consumer.
+- `dangling_evidence` recognises a published-fact name and points at the node
+  that publishes it (#13).
+- Running on Python older than 3.11 raises a message naming the version instead
+  of failing later on a missing PyYAML (#10).
+
 ### Added
 
 - Work and contract nodes, gate expressions, and an incremental evaluator with

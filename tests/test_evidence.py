@@ -464,3 +464,123 @@ def test_doctor_exits_nonzero_on_a_real_error(tmp_path):
         "id: a\nstatus: not_started\ngates: {start: ghost.done}\n"
     )
     assert cli.main(["--graph", str(graph_dir), "doctor"]) == 1
+
+
+# -- cycles whose shape has a known cause ------------------------------------
+
+
+def test_gating_on_your_own_parents_published_fact_is_named():
+    """#11: the docs push toward published facts without saying they are external."""
+    graph = build(
+        {"id": "sub", "status": "in_progress", "publishes": {"thing": "sub.impl.done"}},
+        {"id": "sub.impl", "parent": "sub", "status": "done"},
+        {
+            "id": "sub.consumer",
+            "parent": "sub",
+            "status": "not_started",
+            "gates": {"start": "sub.thing"},
+        },
+    )
+    problems = queries.check(graph)
+    named = [p for p in problems if p.code == "cycle_known_shape"]
+    assert len(named) == 1
+    assert "published by its own ancestor" in named[0].message
+    assert "reference the sibling directly" in named[0].message
+
+
+def test_an_implementer_gating_on_its_own_contract_is_named():
+    """#12: the consumer gates on a contract; the implementer only satisfies it."""
+    graph = build(
+        {
+            "id": "contract.shape",
+            "kind": "contract",
+            "status": "agreed",
+            "satisfied_by": ["producer"],
+        },
+        {
+            "id": "producer",
+            "status": "in_progress",
+            "gates": {"start": "contract.shape.live"},
+        },
+    )
+    named = [p for p in queries.check(graph) if p.code == "cycle_known_shape"]
+    assert len(named) == 1
+    assert "only satisfies it" in named[0].message
+
+
+def test_self_satisfaction_does_not_also_report_nobody_requires_it():
+    """#12: two findings that contradict each other sent the reporter hunting."""
+    graph = build(
+        {
+            "id": "contract.shape",
+            "kind": "contract",
+            "status": "agreed",
+            "satisfied_by": ["producer"],
+        },
+        {
+            "id": "producer",
+            "status": "in_progress",
+            "gates": {"start": "contract.shape.live"},
+        },
+    )
+    codes = [p.code for p in queries.check(graph)]
+    assert "unconsumed_contract" not in codes
+
+
+def test_a_genuinely_unconsumed_contract_still_reports():
+    graph = build(
+        {
+            "id": "contract.shape",
+            "kind": "contract",
+            "status": "agreed",
+            "satisfied_by": ["producer"],
+        },
+        {"id": "producer", "status": "done"},
+    )
+    assert "unconsumed_contract" in [p.code for p in queries.check(graph)]
+
+
+def test_a_parent_does_not_count_as_a_contracts_consumer():
+    """`referrers_of`, not `dependents_of`: containment is not demand."""
+    graph = build(
+        {"id": "sys", "status": "in_progress"},
+        {
+            "id": "sys.contract",
+            "kind": "contract",
+            "parent": "sys",
+            "status": "agreed",
+            "satisfied_by": ["impl"],
+        },
+        {"id": "impl", "status": "done"},
+    )
+    assert "unconsumed_contract" in [p.code for p in queries.check(graph)]
+
+
+def test_an_unrecognised_cycle_still_reports_plainly():
+    graph = build(
+        {"id": "a", "status": "not_started", "gates": {"start": "b.done"}},
+        {"id": "b", "status": "not_started", "gates": {"start": "a.done"}},
+    )
+    cycles = [p for p in queries.check(graph) if p.code == "cycle"]
+    assert len(cycles) == 1
+    assert "dependency cycle" in cycles[0].message
+
+
+def test_a_recognised_cycle_does_not_crash_the_derived_pass():
+    """The early return is keyed off the cycles, not off a problem code.
+
+    A new code for a recognised shape used to slip past that guard, and check
+    then crashed inside the engine.
+    """
+    graph = build(
+        {"id": "sub", "status": "in_progress", "publishes": {"thing": "sub.impl.done"}},
+        {"id": "sub.impl", "parent": "sub", "status": "done"},
+        {
+            "id": "sub.consumer",
+            "parent": "sub",
+            "status": "not_started",
+            "gates": {"start": "sub.thing"},
+        },
+    )
+    problems = queries.check(graph)  # must not raise
+    assert any(p.code == "cycle_known_shape" for p in problems)
