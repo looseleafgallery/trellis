@@ -1,0 +1,42 @@
+# Contracts first: these are the things two pieces of work have to agree on
+# before either can be finished. Modelled before the work, per AGENTS.md,
+# because a contract is the thing that was argued about.
+
+nodes:
+  - id: contract.durable_state_home
+    title: Where durable coordination state lives
+    kind: contract
+    status: draft
+    version: 0
+    notes: >
+      The journal is in .trellis/, which is gitignored, so correction reasons
+      and the drift baseline never leave one machine. A proposal awaiting a
+      human decision is a handoff between two parties, so it cannot live
+      somewhere the other party cannot see. Both questions are the same
+      question, and neither piece of work can be finished until it is answered.
+      Nobody has drafted this - see #28.
+
+  - id: contract.reconcile_outcome
+    title: How the outcome of checking an edge is recorded
+    kind: contract
+    status: draft
+    version: 0
+    notes: >
+      Calibration needs to know whether a checked edge held or was wrong. The
+      wrong case usually deletes the evidence of its own failure, so the
+      outcome has to be captured deliberately rather than inferred. The
+      proposal queue needs the same shape for accept and reject, so this is one
+      agreement, not two. See #19.
+
+  - id: contract.beliefs_in_the_model
+    title: Whether trellis models beliefs, not just commitments
+    kind: contract
+    status: draft
+    version: 0
+    notes: >
+      A decision that is done and still moving has no word. Making it
+      gate-readable puts a time-dependent value inside a content-hash cache
+      key, which is the property that makes the engine trustworthy. Keeping it
+      in the trust layer keeps the engine honest but gives up the useful gate.
+      This is the one that decides whether the roadmap goes further into
+      beliefs at all. See #20.

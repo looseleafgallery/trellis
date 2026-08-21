@@ -1,0 +1,17 @@
+nodes:
+  - id: dist.release_process
+    title: Decide tagging, releases, and whether PyPI happens
+    status: not_started
+    awaiting: whether trellis publishes to PyPI under another distribution name
+    notes: >
+      #8. Deliberately unparented: it belongs to no feature, which is itself
+      the diagnostic - nobody owns distribution yet.
+
+  - id: core.concurrency
+    title: Lock the writer against concurrent edits
+    status: not_started
+    notes: >
+      #7. Known limitation, understood and documented. It has no edges because
+      nothing genuinely waits on it. `check` will call it inert, which is true
+      - acknowledging that is a call for whoever owns this, not for the agent
+      that wrote the file.
