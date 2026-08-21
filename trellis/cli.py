@@ -681,7 +681,15 @@ def cmd_trust(args) -> int:
         )
 
     if unconfirmed:
-        print("\nunconfirmed edges - believed, never checked:")
+        checked, wrong = journal.calibration(graph_dir)
+        header = "\nunconfirmed edges - believed, never checked:"
+        if checked:
+            # The number the annotation is worth: not how many are unchecked,
+            # but how often unchecked ones turned out to be wrong. Counts, never
+            # a rate — a small denominator invites being read as a property of
+            # the world rather than of one graph.
+            header += f"\n  last time you checked, {wrong} of {checked} were wrong."
+        print(header)
         for claim in unconfirmed:
             print(f"  ? {claim.source} -> {claim.target}   ({claim.how})")
     if aged:
@@ -1345,6 +1353,138 @@ def cmd_snapshot(args) -> int:
     return 0
 
 
+def cmd_reconcile(args) -> int:
+    """Check believed edges against the world, and record what you found.
+
+    The outcome is the point. Whether an edge held is not recoverable
+    afterwards — a confirmed one becomes `verified` and a wrong one gets
+    rewritten or deleted, both structural edits, and the wrong case deletes the
+    evidence of its own failure. So it is captured here, at the only moment it
+    is cheap.
+    """
+    graph, cache, graph_dir = _load(args)
+    claims = evidence_mod.edges(graph)
+    already = journal.reconciled(graph_dir)
+
+    candidates = evidence_mod.unconfirmed(claims)
+    candidates += [
+        c
+        for c in evidence_mod.stale_verifications(claims, args.stale_after)
+        if (c.source, c.target) not in {(x.source, x.target) for x in candidates}
+    ]
+    if not args.all:
+        candidates = [c for c in candidates if (c.source, c.target) not in already]
+
+    checked, wrong = journal.calibration(graph_dir)
+    if not candidates:
+        annotated, total = evidence_mod.coverage(claims)
+        if not total:
+            print("no edges to check - this graph has no gates yet")
+        elif not annotated:
+            print(
+                f"none of {total} edges are annotated, so there is nothing to "
+                f"check.\nadd `evidence:` to record which are verified and which "
+                f"are guesses."
+            )
+        elif already:
+            print(
+                "nothing new to check - every unconfirmed edge has been "
+                "reconciled.\n`--all` walks them again."
+            )
+        else:
+            print(f"nothing to check - all {annotated} annotated edges are confirmed")
+        if checked:
+            print(f"\nchecked {checked} edge(s) so far; {wrong} turned out wrong.")
+        return 0
+
+    if not sys.stdin.isatty():
+        print(
+            "error: reconcile is interactive; `trellis trust` lists the same "
+            "edges as a report.",
+            file=sys.stderr,
+        )
+        return 2
+
+    print(f"{len(candidates)} edge(s) to check against the world.")
+    if checked:
+        print(f"checked {checked} before; {wrong} turned out wrong.")
+
+    found: list[journal.Outcome] = []
+    for index, claim in enumerate(candidates, 1):
+        prior = already.get((claim.source, claim.target))
+        note = ""
+        if claim.how in ("inferred", "assumed"):
+            note = f"{claim.how}, never confirmed"
+        else:
+            note = f"{claim.how} {claim.at}, {claim.age_days}d ago"
+        print(f"\n[{index}/{len(candidates)}] {claim.source} -> {claim.target}")
+        print(f"  ({note})")
+        if prior:
+            outcome = "held" if prior.held else "was wrong"
+            print(f"  last checked {prior.at[:10]}: {outcome}")
+
+        while True:
+            print("\n  [h] held  [w] wrong  [s] skip  [q] quit")
+            try:
+                answer = input("> ").strip().lower()
+            except EOFError:
+                answer = "q"
+            if answer in ("q", "quit"):
+                index = -1
+                break
+            if answer in ("s", "skip", ""):
+                break
+            if answer in ("h", "held", "w", "wrong"):
+                held = answer in ("h", "held")
+                try:
+                    why = input("  why? (enter to skip) ").strip()
+                except EOFError:
+                    why = ""
+                found.append(
+                    journal.Outcome(
+                        source=claim.source,
+                        target=claim.target,
+                        how=claim.how or "",
+                        held=held,
+                        reason=why,
+                    )
+                )
+                if held:
+                    # Writing `evidence:` is a structural edit, which the writer
+                    # does not do. Hand over the line rather than guess at it.
+                    print(
+                        f"  recorded. mark it verified by hand if you want:\n"
+                        f"    evidence:\n"
+                        f"      {claim.target}: {{how: verified, at: {_today()}}}"
+                    )
+                else:
+                    print("  recorded. the edge itself is yours to correct.")
+                break
+            print("  not one of the options")
+        if index == -1:
+            break
+
+    if not found:
+        print("\nnothing recorded.")
+        return 0
+
+    journal.record_outcome(graph_dir, found)
+    cache.save()
+    bad = sum(1 for o in found if not o.held)
+    print(f"\nrecorded {len(found)} outcome(s), {bad} wrong.")
+    total_checked, total_wrong = journal.calibration(graph_dir)
+    print(
+        f"across all time: {total_wrong} of {total_checked} checked edges were wrong."
+    )
+    return 0
+
+
+def _today() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).date().isoformat()
+
+
 def cmd_deps(args) -> int:
     graph, _cache, _ = _load(args)
     requested = args.node
@@ -1589,6 +1729,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--out", metavar="PATH", help="where to write, for --format html")
     p.set_defaults(func=cmd_graph)
+
+    p = sub.add_parser(
+        "reconcile",
+        help="check believed edges against the world, and record what you find",
+    )
+    p.add_argument(
+        "--all", action="store_true", help="include edges already reconciled"
+    )
+    p.add_argument(
+        "--stale-after",
+        type=int,
+        default=evidence_mod.DEFAULT_STALE_DAYS,
+        metavar="DAYS",
+        help="age at which a verification is worth rechecking",
+    )
+    p.set_defaults(func=cmd_reconcile)
 
     p = sub.add_parser("review", help="walk the findings one at a time and act on them")
     p.add_argument(
