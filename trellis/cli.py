@@ -15,7 +15,7 @@ from . import evidence as evidence_mod
 from . import snapshot as snapshot_mod
 from .cache import Cache
 from .engine import CycleError, Derived, Engine
-from .loader import find_graph_dir, load_graph
+from .loader import find_graph_dir, load_graph, project_root
 from .model import Graph, ModelError, is_retreat
 
 MARKS = {
@@ -34,7 +34,7 @@ MARKS = {
 
 
 def _cache_path(graph_dir: Path, enabled: bool) -> Path | None:
-    return graph_dir.parent / ".trellis" / "cache.json" if enabled else None
+    return project_root(graph_dir) / ".trellis" / "cache.json" if enabled else None
 
 
 def _load(args) -> tuple[Graph, Cache, Path]:
