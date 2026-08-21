@@ -420,18 +420,22 @@ def collect(
                 )
             )
 
-    legacy = journal.legacy_journal_path(graph_dir) if graph_dir else None
-    if legacy is not None and legacy.exists():
+    legacy = None
+    if graph_dir:
+        legacy = next(
+            (p for p in journal.legacy_journal_paths(graph_dir) if p.exists()), None
+        )
+    if legacy is not None:
         problems.append(
             Problem(
                 "legacy_journal",
                 "warn",
                 # Not about any one node; naming it keeps the output aligned.
                 "(graph)",
-                f"the journal is still in {journal.LEGACY_DIRNAME}/, which is "
-                f"normally gitignored - so every recorded reason is local to this "
-                f"machine. Move it: git mv {journal.LEGACY_DIRNAME}/"
-                f"{journal.JOURNAL_NAME} {journal.HISTORY_DIRNAME}/",
+                f"a journal is still at {legacy}, which is normally gitignored "
+                f"- so every reason recorded in it is local to this machine. "
+                f"Its entries are being read; move it with: "
+                f"mv {legacy} {journal.HISTORY_DIRNAME}/",
             )
         )
 

@@ -59,6 +59,20 @@ expensive to break.
 
 ### Fixed
 
+- `file_history` passed a relative pathspec to `git -C <graph_dir>`, so the
+  path was resolved twice — `--graph graph` from a project root asked git for
+  `graph/graph`, matched nothing, and silently reported every node as having no
+  history. Volatility and staleness were off for anyone using the natural
+  spelling.
+- A journal written before the path fix lives where the *buggy* resolution put
+  it, which the legacy reader did not look at — so upgrading could make
+  recorded reasons invisible while the file sat tracked in the repository. Both
+  old locations are now read, and `check` names the one it found.
+- Two messages stated conclusions the tool had not verified: `trust` reported
+  "not in git, or never committed" from a lookup that could not have found
+  anything, and `drift` reported "trellis has not written any status yet" when
+  it had only not written where it looked.
+
 - The journal, cache, snapshots and `trellis.toml` were located relative to how
   `--graph` was spelled rather than to where the graph is, so `.` and `graph`
   were two different projects. One graph could accumulate two journals with

@@ -914,3 +914,40 @@ def test_a_reference_that_split_on_a_hyphen_suggests_the_real_node():
 def test_ordinary_ids_are_not_flagged():
     graph = build({"id": "agent.tool_exec", "status": "done"})
     assert not [p for p in queries.check(graph) if p.code == "unreferenceable_id"]
+
+
+# -- absence where you looked is not absence ---------------------------------
+
+
+def test_history_is_the_same_however_the_path_is_spelled(repo, monkeypatch):
+    """`_git` runs `git -C <dir>`, so a relative pathspec resolved twice.
+
+    `--graph graph` from a project root asked git for `graph/graph`, matched
+    nothing, and every node was reported as having no history.
+    """
+    absolute = evidence.file_history(repo)
+    assert absolute, "fixture has no history"
+
+    monkeypatch.chdir(repo.parent)
+    assert evidence.file_history("graph") == absolute
+    monkeypatch.chdir(repo)
+    assert evidence.file_history(".") == absolute
+
+
+def test_volatility_survives_a_relative_path(repo, monkeypatch):
+    monkeypatch.chdir(repo.parent)
+    ev = evidence.gather("graph", load_graph("graph"), now=NOW)
+    assert ev["churn"].band == "churning"
+    assert ev["settled"].age_days == 80
+
+
+def test_being_in_git_is_asked_of_git(repo):
+    assert evidence.in_git(repo)
+
+
+def test_a_directory_outside_any_repo_is_known_to_be_outside(tmp_path):
+    """Its own tmp_path: the repo fixture git-inits the one it is given, so a
+    subdirectory of that is inside the repository."""
+    bare = tmp_path / "graph"
+    bare.mkdir()
+    assert not evidence.in_git(bare)

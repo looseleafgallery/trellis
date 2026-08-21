@@ -37,12 +37,37 @@ def journal_path(graph_dir: str | Path) -> Path:
     return project_root(graph_dir) / HISTORY_DIRNAME / JOURNAL_NAME
 
 
+def legacy_journal_paths(graph_dir: str | Path) -> list[Path]:
+    """Everywhere a journal may have been written before it had one home.
+
+    Two locations, not one. Before the path fix, the journal was placed
+    relative to how `--graph` was *spelled*, so anyone who ran `--graph .` from
+    inside their graph directory has one a level deeper than the resolved
+    parent. Looking only where it should have been would lose exactly the
+    people the path fix was about.
+    """
+    candidates = [
+        project_root(graph_dir) / LEGACY_DIRNAME / JOURNAL_NAME,
+        Path(graph_dir).resolve() / LEGACY_DIRNAME / JOURNAL_NAME,
+    ]
+    seen, out = set(), []
+    for path in candidates:
+        if path not in seen:
+            seen.add(path)
+            out.append(path)
+    return out
+
+
 def legacy_journal_path(graph_dir: str | Path) -> Path:
-    return project_root(graph_dir) / LEGACY_DIRNAME / JOURNAL_NAME
+    """The first legacy journal that exists, or the canonical old location."""
+    paths = legacy_journal_paths(graph_dir)
+    return next((p for p in paths if p.exists()), paths[0])
 
 
 def has_journal(graph_dir: str | Path) -> bool:
-    return journal_path(graph_dir).exists() or legacy_journal_path(graph_dir).exists()
+    return journal_path(graph_dir).exists() or any(
+        p.exists() for p in legacy_journal_paths(graph_dir)
+    )
 
 
 def record(
@@ -92,9 +117,10 @@ def read(graph_dir: str | Path, limit: int | None = None) -> list[dict]:
     loses the reasons you already recorded. Legacy entries come first: they
     predate the new file by construction.
     """
-    entries = _read_one(legacy_journal_path(graph_dir)) + _read_one(
-        journal_path(graph_dir)
-    )
+    entries: list[dict] = []
+    for legacy in legacy_journal_paths(graph_dir):
+        entries += _read_one(legacy)
+    entries += _read_one(journal_path(graph_dir))
     return entries[-limit:] if limit else entries
 
 
