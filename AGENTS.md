@@ -98,6 +98,17 @@ publishes:
   streaming_results: has(tools.streaming, "streaming-results")
 ```
 
+**Published facts are the *external* interface.** Gate on them from *other*
+subsystems. Inside a subsystem, a sibling references its sibling directly —
+gating on your own parent's published fact closes a cycle, because the parent
+already depends on its children through rollup.
+
+```yaml
+# from outside `tools`:      gates: {start: tools.streaming_results}   correct
+# from a sibling inside it:  gates: {start: tools.streaming.done}      correct
+# from a sibling inside it:  gates: {start: tools.streaming_results}   cycles
+```
+
 **Provenance** records why you believe an edge:
 
 ```yaml
@@ -108,6 +119,18 @@ evidence:
 
 `how` is one of `verified` (checked against a system of record), `stated`
 (someone told you), `inferred` (you worked it out), `assumed` (nobody said it).
+
+**Evidence keys are node ids, even when the gate names a published fact.** The
+gate below references `tools.streaming_results`; the evidence annotates `tools`,
+the node that publishes it:
+
+```yaml
+id: agent.tool_exec
+gates:
+  finish: tools.streaming_results
+evidence:
+  tools: {how: verified, at: 2026-08-21}
+```
 
 ## Bootstrapping a graph
 

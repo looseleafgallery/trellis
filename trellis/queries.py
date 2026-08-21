@@ -86,6 +86,66 @@ def reaches_inside(graph: Graph, source_id: str, target_id: str) -> str | None:
     return None
 
 
+def _published_fact_reference(graph: Graph, node_id: str, owner: str) -> str | None:
+    """The published fact of `owner` that `node_id` gates on, if any."""
+    node = graph.get(node_id)
+    for _gate_name, source in node.gates:
+        try:
+            refs = expr_mod.references(source)
+        except expr_mod.ExprError:
+            continue
+        for dotted in refs:
+            try:
+                target, rest = graph.resolve_ref(dotted)
+            except KeyError:
+                continue
+            if target == owner and rest and rest[0] in graph.get(owner).publishes_map:
+                return dotted
+    return None
+
+
+def explain_cycle(graph: Graph, cycle: list[str]) -> str | None:
+    """Name the mistake behind a cycle, when the shape is one we recognise.
+
+    A cycle is always a real modelling error, but "a -> b -> a" describes the
+    topology rather than the cause. These two shapes come from following the
+    documentation slightly too far, so they are worth naming precisely.
+    """
+    members = {n for n in cycle if n in graph}
+
+    # A node gating on a published fact of its own ancestor. The parent already
+    # depends on its children through rollup, so this closes a loop. It comes
+    # from `reaches_inside` pushing toward published facts without saying that
+    # they are the *external* interface.
+    for node_id in sorted(members):
+        for ancestor in ancestors_of(graph, node_id):
+            if ancestor not in members:
+                continue
+            dotted = _published_fact_reference(graph, node_id, ancestor)
+            if dotted:
+                return (
+                    f"{node_id} gates on {dotted!r}, a fact published by its own "
+                    f"ancestor {ancestor!r}. A published fact is a subsystem's "
+                    f"external interface; inside the subsystem, reference the "
+                    f"sibling directly"
+                )
+
+    # An implementer gating on the contract it satisfies. The consumer is
+    # supposed to gate on a contract; the implementer only satisfies it.
+    for node_id in sorted(members):
+        node = graph.get(node_id)
+        if node.kind != "contract":
+            continue
+        for impl in node.satisfied_by:
+            if impl in members and node.id in graph.references_of(impl):
+                return (
+                    f"{impl} satisfies {node.id} and also gates on it. A contract "
+                    f"is gated on by its consumers; its implementer only satisfies "
+                    f"it"
+                )
+    return None
+
+
 def check(graph: Graph, engine: Engine | None = None) -> list[Problem]:
     """Structural validation plus every derived violation in the graph."""
     problems: list[Problem] = []
@@ -164,12 +224,26 @@ def check(graph: Graph, engine: Engine | None = None) -> list[Problem]:
         referenced = set(graph.references_of(node.id))
         for item in node.evidence:
             if item.target not in graph:
+                # The gate this annotates very likely named a published fact,
+                # which is the thing the docs tell you to prefer across
+                # subsystems. Point at the node that publishes it rather than
+                # just refusing the name.
+                hint = ""
+                try:
+                    owner, rest = graph.resolve_ref(item.target)
+                except KeyError:
+                    owner, rest = None, ()
+                if owner and rest and rest[0] in graph.get(owner).publishes_map:
+                    hint = (
+                        f" - that is a fact published by {owner!r}; evidence keys "
+                        f"are node ids, so annotate {owner!r}"
+                    )
                 problems.append(
                     Problem(
                         "dangling_evidence",
                         "error",
                         node.id,
-                        f"evidence names unknown node {item.target!r}",
+                        f"evidence names unknown node {item.target!r}{hint}",
                     )
                 )
             elif item.target not in referenced:
@@ -183,10 +257,18 @@ def check(graph: Graph, engine: Engine | None = None) -> list[Problem]:
                     )
                 )
 
-    for cycle in find_cycles(graph):
+    cycles = find_cycles(graph)
+    cycle_members: set[str] = set()
+    for cycle in cycles:
+        cycle_members.update(cycle)
+        message = "dependency cycle: " + " -> ".join(cycle)
+        cause = explain_cycle(graph, cycle)
         problems.append(
             Problem(
-                "cycle", "error", cycle[0], "dependency cycle: " + " -> ".join(cycle)
+                "cycle" if cause is None else "cycle_known_shape",
+                "error",
+                cycle[0],
+                f"{message}\n      {cause}" if cause else message,
             )
         )
 
@@ -194,10 +276,19 @@ def check(graph: Graph, engine: Engine | None = None) -> list[Problem]:
     # the (strictly local, cacheable) per-node computation.
     for node in graph:
         if node.kind == "contract":
-            consumers = [
-                d for d in graph.dependents_of(node.id) if d not in node.satisfied_by
-            ]
-            if not consumers and node.status in ("agreed", "frozen"):
+            # `referrers_of`, not `dependents_of`: a parent reading its children
+            # is not demand for the contract.
+            referrers = graph.referrers_of(node.id)
+            consumers = [d for d in referrers if d not in node.satisfied_by]
+
+            # An implementer that also gates on its contract always closes a
+            # cycle, so that case is reported once, by the cycle, with the fix
+            # named. Nothing is added here.
+            #
+            # `not referrers` rather than `not consumers`: saying "no node's gate
+            # requires it" while the node that does require it is named in a
+            # cycle sends you looking for a second problem that is not there.
+            if not referrers and node.status in ("agreed", "frozen"):
                 problems.append(
                     Problem(
                         "unconsumed_contract",
@@ -266,8 +357,12 @@ def check(graph: Graph, engine: Engine | None = None) -> list[Problem]:
                 )
             )
 
-    if any(p.code == "cycle" for p in problems):
-        return problems  # derived state is undefined until the cycle is cut
+    if cycles:
+        # Derived state is undefined until the cycle is cut, so stop here rather
+        # than letting the engine raise. Keyed off the cycles themselves, not off
+        # a problem code — a new code for a recognised shape used to slip past
+        # this guard and crash.
+        return problems
 
     engine = engine or Engine(graph)
     for node_id, derived in engine.all_derived().items():

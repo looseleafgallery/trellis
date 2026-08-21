@@ -11,8 +11,15 @@ full evaluation of a graph this size is sub-millisecond. One optional command
 change, but the model only ever proposes: every consequence is still computed.
 
 ```bash
+python3 --version   # must be 3.11 or newer
 pip install git+https://github.com/looseleafgallery/trellis.git
 ```
+
+**Check the version first.** The `pip` bundled with macOS system Python 3.9 is
+old enough to ignore `requires-python`, so the install half-succeeds and the
+first error you see names a missing PyYAML rather than the version. trellis
+raises a clear message on import if it is running on anything older than 3.11,
+but an old pip can get you there in the first place.
 
 Or `pipx install git+https://github.com/looseleafgallery/trellis.git` for a
 global `trellis` command. There is no `pip install trellis`: that name belongs
@@ -72,6 +79,13 @@ done. Not-live splits into `unagreed` (waiting on people to decide) and
 `pending` (waiting on work to land) — a stuck pipeline needs a different push
 depending on which one it is.
 
+Two work statuses are easy to miss and worth knowing before you need them.
+`done_unverified` is complete-but-unchecked: it stops a green-but-unreviewed
+change being called done, and exports `complete: true` with `done: false` so
+strict gates stay shut while permissive ones can proceed at risk. `superseded`
+is replaced-by-something-else rather than dropped, which changes whether you
+delete the node or keep it as a pointer.
+
 ## Published facts
 
 A subsystem declares the facts it offers the rest of the graph. Everything else
@@ -94,6 +108,12 @@ moment it does, the tools subsystem can no longer be split, renamed, or
 reordered without silently breaking a gate in a subsystem that never knew it
 existed. Components can only "change freely" if their internals are not
 addressable from outside.
+
+Published facts are the **external** interface. Gate on them from other
+subsystems; inside a subsystem, a sibling references its sibling directly.
+Gating on your own parent's published fact closes a cycle, because the parent
+already depends on its children through rollup — `check` recognises that shape
+and says so.
 
 `publishes` is to a subsystem what a contract is to a pair of them. Values are
 ordinary gate expressions (or literal numbers/booleans), they land in the
@@ -356,6 +376,14 @@ evidence:
 system of record), `stated` (someone said so), `inferred` (read out of prose,
 never confirmed), `assumed` (nobody said it). Closed on purpose — an open
 vocabulary could not be reported consistently.
+
+**The annotations turn out to be calibrated.** On the first real graph — 41
+nodes, 36 edges — 27 edges were annotated and 7 came out unconfirmed. Checking
+all 7 against the tracker found 2 wrong. None of the 27 marked `verified` were.
+One of the two was a name collision: two projects each had a decision called
+`D3`, and the wrong one got referenced. That is precisely the class of error
+nobody catches by rereading their own graph, and the annotation had already
+pointed at it.
 
 `explain` then distinguishes them, which turns a blocked node into an
 instruction:

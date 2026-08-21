@@ -117,3 +117,24 @@ def test_readme_gives_the_user_install_not_the_contributor_one():
     # `trellis` on PyPI belongs to an unrelated project; saying so avoids a
     # confusing failure for anyone who tries the obvious thing.
     assert "no `pip install trellis`" in text
+
+
+def test_the_version_floor_is_stated_in_one_place_and_agreed_everywhere():
+    """#10: an old pip ignores requires-python, so the guard must match it."""
+    import re
+
+    import trellis
+
+    pyproject = (ROOT / "pyproject.toml").read_text()
+    declared = re.search(r'requires-python = ">=(\d+)\.(\d+)"', pyproject)
+    assert declared, "pyproject.toml no longer declares requires-python"
+    floor = (int(declared.group(1)), int(declared.group(2)))
+
+    source = (ROOT / "trellis" / "__init__.py").read_text()
+    guard = re.search(r"sys\.version_info < \((\d+), (\d+)\)", source)
+    assert guard, "the runtime version guard is gone"
+    assert (int(guard.group(1)), int(guard.group(2))) == floor
+
+    readme = (ROOT / "README.md").read_text()
+    assert f"{floor[0]}.{floor[1]}" in readme, "README does not state the floor"
+    assert trellis.__version__
