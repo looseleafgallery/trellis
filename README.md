@@ -475,6 +475,91 @@ stdin. Read-only is a property of the interface rather than a rule anyone has
 to follow, which is why an external renderer is safe to point at code you did
 not write. `json` and `mermaid` are built in.
 
+## trellis owns the state machine
+
+Change status through `set` or `log`, not by editing YAML. Everything trellis
+knows about *why* a graph looks the way it does comes from changes passing
+through the loop; a hand edit gets no preview, no verification, no journal
+entry, and — when it walks a status backwards — no recorded reason.
+
+Hand editing is still allowed. The drift is yours:
+
+```
+$ trellis drift
+1 node(s) changed outside trellis:
+
+  ! tools.sandbox: trellis wrote 'done', file says 'in_progress'
+      last written 2026-08-21T18:52:53+00:00
+
+1 of these walked a status backwards. Those are corrections,
+and the reason for each was never recorded.
+```
+
+Only nodes trellis has actually written are compared — a node that has never
+been through `set` is not drifting, it simply is not managed by the tool.
+
+Reconcile either by changing it back through the loop, or by accepting the edit
+and recording what the file now says:
+
+```bash
+trellis drift --accept --because "reverted by hand while debugging"
+```
+
+Accepting is a separate act rather than "just run `set` again", because the
+file already says what you would be setting it to — the change would be a
+no-op and nothing would be journaled.
+
+Drift tracks status only. Structural edits — gates, contracts, published facts
+— are always by hand.
+
+### Where history lives
+
+```
+proj/
+  graph/          the declaration
+  history/        the journal - committed
+  snapshots/      point-in-time captures - committed
+  .trellis/       the evaluation cache - gitignored
+```
+
+The journal is the only copy of *why*. None of it is recoverable from the YAML
+or from git, so it is committed. The cache is derived and recomputable, so it
+is not. Those two used to share a directory, which meant no ignore rule was
+right for both.
+
+A journal in the old location is still read, so moving it is something you do
+when you get to it — `check` gives you the command. A graph with **no** journal
+is said out loud rather than quietly answering a weaker question:
+
+```
+no journal for this graph, so answers here are weaker than they look:
+  - age is per file, not per node
+  - corrections and their reasons are unknown
+  - drift has no baseline to compare against
+```
+
+### Corrections are not revisions
+
+A status moving backwards — `done` to `in_progress`, `agreed` to `draft` — is a
+belief being revised rather than progress being undone. Forward is progress;
+`abandoned` and `superseded` are decisions; only walking back is an error being
+admitted.
+
+So `set` says so and asks why before applying it. The reason is the only part
+of a correction that is not recoverable afterwards, and the moment it happens
+is the only time the answer is cheap. `--because "..."` supplies it
+non-interactively.
+
+`trust` then reports corrections separately from revisions, because they look
+identical in a diff and mean opposite things: a contract revised nine times is
+being negotiated, while a node corrected twice was wrong twice, and what it
+claims now is worth less. `doctor` flags a node corrected repeatedly, and flags
+a correction with no recorded reason as a lesson thrown away.
+
+This feeds reporting only. Corrections never silently change what the engine
+computes — the same challenge-never-set rule the rest of the trust layer
+follows.
+
 ## Trust
 
 Evaluation is the easy half. The half that decides whether anyone still uses

@@ -53,9 +53,9 @@ def _emit(payload, as_json: bool) -> None:
 
 
 def cmd_check(args) -> int:
-    graph, cache, _ = _load(args)
+    graph, cache, graph_dir = _load(args)
     engine = Engine(graph, cache)
-    problems, muted = queries.check_with_muted(graph, engine)
+    problems, muted = queries.check_with_muted(graph, engine, graph_dir)
     cache.save()
 
     if args.json:
@@ -625,6 +625,19 @@ def cmd_trust(args) -> int:
                 f"{claim.how} {claim.at} ({claim.age_days}d ago)"
             )
 
+    if not journal.has_journal(graph_dir):
+        # Without it, `trust` falls back to file-level git history and `drift`
+        # has no baseline at all. Saying so beats quietly answering a weaker
+        # question with the same confidence.
+        print(
+            "\nno journal for this graph, so answers here are weaker than they "
+            "look:\n"
+            "  - age is per file, not per node\n"
+            "  - corrections and their reasons are unknown\n"
+            "  - drift has no baseline to compare against\n"
+            "one appears as soon as a change goes through `set` or `log`."
+        )
+
     if total_edges:
         if evidence_mod.uses_provenance(claims):
             print(f"\nedge provenance: {annotated}/{total_edges} edges annotated")
@@ -666,6 +679,7 @@ REMEDIES = {
     "dead_evidence": "the edge this justified no longer exists - remove the evidence.",
     "drift": "edited outside trellis - reconcile it with `set`, or accept it.",
     "dead_acknowledgement": "this finding no longer fires - drop the acknowledge entry.",
+    "legacy_journal": "move it into history/ and commit it; the cache stays ignored.",
     "cycle": "these depend on each other. One of the edges is wrong.",
     "dangling_reference": "names a node that does not exist. Typo, or not modelled yet?",
     "unreferenceable_id": "rename it with underscores; gates cannot reach it as it is.",
@@ -688,7 +702,7 @@ def cmd_doctor(args) -> int:
     """
     graph, cache, graph_dir = _load(args)
     engine = Engine(graph, cache)
-    problems = queries.check(graph, engine)
+    problems = queries.check(graph, engine, graph_dir)
     derived = engine.all_derived()
     evidence = evidence_mod.gather(graph_dir, graph)
     cache.save()
@@ -987,7 +1001,7 @@ def cmd_review(args) -> int:
     """
     graph, cache, graph_dir = _load(args)
     engine = Engine(graph, cache)
-    problems, muted = queries.check_with_muted(graph, engine)
+    problems, muted = queries.check_with_muted(graph, engine, graph_dir)
     cache.save()
 
     if not sys.stdin.isatty():

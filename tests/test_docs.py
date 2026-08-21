@@ -140,11 +140,12 @@ def test_the_version_floor_is_stated_in_one_place_and_agreed_everywhere():
     assert trellis.__version__
 
 
-def test_every_command_appears_in_the_changelog_or_readme():
-    """The changelog is the only user-facing record of what changed.
+def test_every_command_is_documented_in_the_readme():
+    """The README is the manual: a command absent from it does not exist.
 
-    Three entries were silently lost to scripted edits whose anchors had moved,
-    and nothing noticed because no test read it. This is that test.
+    Two README sections and three changelog entries were silently lost to
+    scripted edits whose anchors had moved, and nothing noticed because no test
+    read either file. `drift` shipped undocumented for four merges.
     """
     changelog = (ROOT / "CHANGELOG.md").read_text()
     readme = (ROOT / "README.md").read_text()
@@ -156,14 +157,19 @@ def test_every_command_appears_in_the_changelog_or_readme():
             if action.choices
         )
     )
-    undocumented = [
-        name
-        for name in sorted(commands)
-        if f"`trellis {name}" not in changelog and f"`trellis {name}" not in readme
-    ]
-    assert not undocumented, (
-        f"commands missing from both CHANGELOG and README: {undocumented}"
-    )
+
+    # The README is the manual, so every command must appear there. Accepting
+    # "changelog or readme" let `drift` ship undocumented: it was in the
+    # changelog, so the gap in the manual never failed.
+    # Matched anywhere the command is shown, fenced or inline — the question is
+    # whether the manual documents it, not how it happens to be marked up.
+    def shown(text: str, name: str) -> bool:
+        return re.search(rf"trellis {re.escape(name)}\b", text) is not None
+
+    missing_readme = [n for n in sorted(commands) if not shown(readme, n)]
+    assert not missing_readme, f"commands missing from README: {missing_readme}"
+
+    assert changelog.strip(), "the changelog is empty"
 
 
 def test_the_changelog_has_an_unreleased_section_with_content():
