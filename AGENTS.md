@@ -277,6 +277,14 @@ that is the most useful sentence in the whole session.
   recovered later. Always pass `--because`, or answer the prompt. See below.
 - `trellis trust` — what is stale, what churns, which edges were never
   confirmed.
+- `trellis blocking <node>` — what it is holding up. Reports two numbers:
+  what unlocks the moment it lands, and what is blocked downstream behind it.
+  **Never quote the second as the first** — they answer different questions,
+  and conflating them is how people misreport their own graph.
+- `trellis blocking --all` — chokepoints, ranked.
+- `trellis graph --around <node>` — a mermaid slice to paste where someone else
+  can read it. Useful when the person you need agreement from does not have
+  trellis.
 - `trellis drift` — has anything been changed around the tool since it last
   wrote? Worth running at the start of a session.
 - `trellis doctor` — run this more often than you think. Findings come ranked;

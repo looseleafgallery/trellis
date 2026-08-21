@@ -862,6 +862,96 @@ def impact(
     )
 
 
+@dataclass
+class Blocking:
+    """Who is waiting on one node, split into the two questions people conflate.
+
+    `unlocks` is what starts moving the moment this lands. `waiting` is
+    everything downstream that cannot start while this is open — a larger set,
+    because most of it is also waiting on other things.
+
+    Quoting one number when you meant the other is a real and repeated mistake:
+    it is the difference between "finishing this frees five people" and
+    "finishing this is on the path of eleven".
+    """
+
+    node: str
+    unlocks: list[str]
+    waiting: list[str]
+
+    def as_dict(self) -> dict:
+        return {
+            "node": self.node,
+            "unlocks": self.unlocks,
+            "waiting": self.waiting,
+        }
+
+
+def _downstream(graph: Graph, node_id: str) -> set[str]:
+    """Everything that reaches `node_id` through requirement edges.
+
+    Containment is excluded deliberately: a parent depends on its children for
+    rollup, but a parent is not *waiting* on them in the sense that matters
+    here, and including it would double-count every subtree.
+    """
+    out: set[str] = set()
+    stack = [node_id]
+    while stack:
+        current = stack.pop()
+        for candidate in graph.referrers_of(current):
+            if candidate not in out:
+                out.add(candidate)
+                stack.append(candidate)
+    return out
+
+
+def blocking(engine: Engine, node_id: str) -> Blocking:
+    """What this node is holding up, by both measures."""
+    derived = engine.all_derived()
+    downstream = _downstream(engine.graph, node_id)
+
+    waiting = sorted(
+        n
+        for n in downstream
+        if derived[n].kind == "work" and derived[n].readiness == "blocked"
+    )
+
+    # `unlocks` is computed by actually asking: readiness is derived, so the
+    # honest answer is what the engine says once the node is done. Reusing the
+    # what-if path means this number cannot drift from what `impact` reports.
+    node = engine.graph.get(node_id)
+    # A contract "landing" means being agreed; work landing means being done.
+    settled = "agreed" if node.kind == "contract" else "done"
+    overlay = {node_id: {"status": settled}}
+    after = Engine(engine.graph.with_overlay(overlay), engine.cache).all_derived()
+    unlocks = sorted(
+        n
+        for n in after
+        if derived[n].readiness == "blocked"
+        and after[n].readiness in ("ready", "active")
+    )
+    return Blocking(node=node_id, unlocks=unlocks, waiting=waiting)
+
+
+def chokepoints(engine: Engine, limit: int = 10) -> list[Blocking]:
+    """Nodes ranked by how much is waiting on them.
+
+    Only open work is considered — a finished node is not a chokepoint. Costs
+    one what-if evaluation per candidate, which the shared cache makes cheap
+    because most of each graph is unaffected by any single change.
+    """
+    derived = engine.all_derived()
+    candidates = [
+        n
+        for n, d in derived.items()
+        if d.readiness not in ("done", "abandoned", "superseded", "live")
+    ]
+    scored = [blocking(engine, n) for n in candidates]
+    scored = [b for b in scored if b.unlocks or b.waiting]
+    scored.sort(key=lambda b: (-len(b.waiting), -len(b.unlocks), b.node))
+    return scored[:limit]
+
+
 def summary(engine: Engine) -> dict:
     """Counts by readiness, plus roots with their rollup progress."""
     derived = engine.all_derived()
