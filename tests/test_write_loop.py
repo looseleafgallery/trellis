@@ -1229,8 +1229,10 @@ def test_a_journal_left_in_the_old_place_is_reported(project, capsys):
 
     cli.main(["--graph", str(project), "check"])
     out = capsys.readouterr().out
-    assert "still in .trellis/" in out
-    assert "git mv" in out
+    assert ".trellis" in out and "journal.jsonl" in out
+    # `mv` rather than `git mv`: the legacy file may be untracked, and git mv
+    # fails on those.
+    assert "mv " in out
 
 
 def test_no_journal_is_said_out_loud_rather_than_quietly_degraded(project, capsys):
@@ -1247,3 +1249,45 @@ def test_once_there_is_a_journal_the_warning_stops(project, capsys):
     capsys.readouterr()
     cli.main(["--graph", str(project), "trust"])
     assert "no journal for this graph" not in capsys.readouterr().out
+
+
+def test_a_journal_written_before_the_path_fix_is_still_found(project, monkeypatch):
+    """The pre-fix build wrote relative to the spelling, so `--graph .` from
+    inside put the journal a level deeper than the resolved parent."""
+    old_place = project / ".trellis"
+    old_place.mkdir(parents=True)
+    (old_place / "journal.jsonl").write_text(
+        '{"at": "2026-01-01T00:00:00+00:00", "origin": "set", "text": "old",'
+        ' "reason": "written before the path fix", "writes": []}\n'
+    )
+
+    monkeypatch.chdir(project.parent)
+    entries = journal.read("graph")
+    assert [e["reason"] for e in entries] == ["written before the path fix"]
+    assert journal.has_journal("graph")
+
+
+def test_both_legacy_locations_are_searched(project):
+    assert len(journal.legacy_journal_paths(project)) == 2
+    assert project / ".trellis" / "journal.jsonl" in journal.legacy_journal_paths(
+        project
+    )
+
+
+def test_a_pre_fix_journal_is_named_in_check(project, capsys):
+    old_place = project / ".trellis"
+    old_place.mkdir(parents=True)
+    (old_place / "journal.jsonl").write_text("")
+
+    cli.main(["--graph", str(project), "check"])
+    out = capsys.readouterr().out
+    assert "still at" in out and ".trellis" in out
+
+
+def test_drift_does_not_claim_nothing_was_ever_written(project, capsys):
+    """It has not written *where it looked*. Whether anything was written is a
+    different question, and a file on disk may say yes."""
+    cli.main(["--graph", str(project), "drift"])
+    out = capsys.readouterr().out
+    assert "no status writes are recorded in this graph's journal" in out
+    assert "has not written any status yet" not in out

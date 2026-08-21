@@ -597,7 +597,13 @@ def cmd_trust(args) -> int:
             print(f"  ~ {item.node:<32} {item.revisions} revisions{shared}")
     if unknown:
         print(
-            f"\nno history for {len(unknown)} node(s) - not in git, or never committed"
+            f"\nno commits found for {len(unknown)} node(s) - the graph is in "
+            f"git, so these are uncommitted"
+            if evidence_mod.in_git(graph_dir)
+            # The tool knows which of the two it is, so it says which rather
+            # than offering a guess as a fact.
+            else f"\nno history for {len(unknown)} node(s) - this graph is not in "
+            f"a git repository"
         )
         for item in unknown[:5]:
             print(f"  ? {item.node}")
@@ -860,8 +866,10 @@ def cmd_drift(args) -> int:
     if not drifted:
         managed = len(journal.last_written(graph_dir))
         if not managed:
+            # An absence where we looked is not proof of absence anywhere.
             print(
-                "nothing to compare against - trellis has not written any status yet.\n"
+                "nothing to compare against - no status writes are recorded in "
+                "this graph's journal.\n"
                 "drift is only detectable for nodes changed through `set` or `log`."
             )
         else:

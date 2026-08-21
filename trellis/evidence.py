@@ -93,8 +93,17 @@ def _git(graph_dir: Path, *args: str) -> str | None:
 
 def head_sha(graph_dir: str | Path) -> str | None:
     """The commit the graph is currently at, if it is in a repo at all."""
-    out = _git(Path(graph_dir), "rev-parse", "--short", "HEAD")
+    out = _git(Path(graph_dir).resolve(), "rev-parse", "--short", "HEAD")
     return out.strip() if out else None
+
+
+def in_git(graph_dir: str | Path) -> bool:
+    """Whether the graph is in a repository at all.
+
+    Separated from "we found no history" on purpose: those are different facts,
+    and reporting the second as the first is a diagnosis the tool cannot make.
+    """
+    return _git(Path(graph_dir).resolve(), "rev-parse", "--show-toplevel") is not None
 
 
 def file_history(graph_dir: str | Path) -> dict[str, tuple[int, datetime]]:
@@ -104,7 +113,11 @@ def file_history(graph_dir: str | Path) -> dict[str, tuple[int, datetime]]:
     in a git repository — every signal here degrades to "unknown" rather than
     to a wrong answer.
     """
-    graph_dir = Path(graph_dir)
+    # Resolved before anything else: `_git` runs `git -C <graph_dir>`, so a
+    # relative pathspec is then resolved *again* against that directory —
+    # `--graph graph` from a project root asked git for `graph/graph`, matched
+    # nothing, and reported every node as having no history.
+    graph_dir = Path(graph_dir).resolve()
     root = _git(graph_dir, "rev-parse", "--show-toplevel")
     if not root:
         return {}
