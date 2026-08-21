@@ -134,7 +134,58 @@ evidence:
 
 ## Bootstrapping a graph
 
-### Do not ask them to list their work
+### The interview is how you reach the person
+
+Not a fallback for when there is no documentation. If a team has good prose
+about their initiative, it is because **someone has been maintaining it for
+weeks** — and that person is already carrying the graph in their head. The
+documents are a written cache of what they know. Talking to them is fast and
+high-confidence.
+
+If a team has no such documents, they usually do not have that person either.
+The interview then becomes archaeology across several people: slow, and it
+produces `stated` rather than `verified`.
+
+This is also why contracts come out first and nearly free. A contract is the
+thing two people argued about, so it is the precise part of their memory.
+
+### Take nodes from anywhere; take edges from a system of record
+
+The single most useful rule here, and it is measured rather than asserted. On
+the first real bootstrap, of 7 edges read out of prose and then checked against
+the tracker, **2 were wrong.** Every edge taken from the tracker's `blocked_by`
+was right.
+
+> Take nodes from wherever you like. Take **edges from a system of record**.
+> Interview for edges only where no system of record has them.
+
+The failure mode is specific: prose interleaves edges, hints, and commentary in
+one sentence. A cell reading *"G5, X3, and A4's held-status surfacing"* is two
+edges and a third thing that is a *consequence*, not a dependency. An importer
+cannot separate those, and a careful reader gets it mostly right — which is
+worse than obviously wrong, because it looks finished.
+
+**Extraction is faster to a complete-looking graph and slower to a true one.**
+So if you extract from documents: extract, annotate honestly as `inferred`,
+then reconcile against the system of record *before* anyone trusts a readiness
+answer. Those three steps are the difference between the two outcomes.
+
+### What they already have decides what to ask
+
+Three starting conditions, needing the questions in near-opposite proportions.
+
+**Blank page.** Interview for everything.
+
+**A tracker and nothing else.** Most teams. The tracker has work nodes, and
+verified edges for free in whatever `blocked_by` field it offers. What it
+cannot have is **contracts** — no tracker models an agreement between two teams
+as an object. Interview almost entirely for contracts, barely at all for edges.
+
+**A tracker plus prose documents.** Contracts extract well if any kind of
+agreements ledger exists. **Edges are the problem here**, and the interview is
+needed for exactly the thing the documents appear to already contain.
+
+### The questions
 
 Everyone can list their projects, and the list is worth almost nothing — it
 produces nodes with no edges, which is a list wearing a graph's clothes.
@@ -143,14 +194,17 @@ produces nodes with no edges, which is a list wearing a graph's clothes.
 Ask the questions that produce **edges**, which people only recall when
 prompted sideways:
 
-- *What did you find out late that you wish you had known early?* — a missed
-  edge is exactly what "found out late" means.
-- *What are two teams currently assuming about each other?* — this is how you
-  find contracts, especially the ones nobody has agreed.
-- *What is waiting on a person rather than on work?* — an unagreed contract,
-  usually.
-- *What would you have to go and check before you believed that?* — provenance,
-  and it tells you which parts of the graph are guesses.
+| Question | Blank page | Tracker only | Tracker + docs |
+|---|---|---|---|
+| *What did you find out late that you wish you had known early?* | essential | essential | partly cached in the docs |
+| *What are two teams currently assuming about each other?* | essential | **essential** — nothing else has contracts | often already written |
+| *What is waiting on a person rather than on work?* | essential | essential | essential |
+| *What would you have to go and check before you believed that?* | moderate | low — edges came from the record | **essential** — extracted prose reads authoritative |
+
+A missed edge is exactly what "found out late" means. An assumption between two
+teams is a contract, usually an unagreed one. Waiting on a person rather than on
+work is the `unagreed` versus `pending` split. And what you would check first is
+provenance — it tells you which parts of the graph are guesses.
 
 ### Model contracts first
 
@@ -161,6 +215,9 @@ is remembered vaguely, and edges are remembered wrongly.
 Then the work that satisfies each contract — naming the contract makes its
 implementers obvious. Then gates, which mostly write themselves once contracts
 and work exist.
+
+This is also the one thing a tracker can never give you, so it is where an
+interview pays for itself even when everything else can be imported.
 
 ### Stop at about eight nodes
 
@@ -187,6 +244,12 @@ system of record in this session.
 This is the highest-value thing you will do and it costs one line per edge.
 Without it the graph looks uniformly confident on day one, which is the exact
 failure provenance exists to prevent.
+
+It is also measurably calibrated. On the first real graph, 27 of 36 edges were
+annotated; of the 7 that came out unconfirmed, checking found 2 wrong, and none
+of the 29 marked `verified` were. The annotation predicted its own failures —
+so **reconcile the unconfirmed ones before anyone leans on a readiness answer.**
+`trellis trust` lists exactly which they are.
 
 ### Validate as you go
 

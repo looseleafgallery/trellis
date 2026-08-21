@@ -18,6 +18,12 @@ expensive to break.
 
 ### Changed
 
+- `AGENTS.md` bootstrapping guidance rewritten around three starting conditions
+  (blank page, tracker only, tracker plus documents), which need the interview
+  questions in near-opposite proportions. Adds the measured rule that edges
+  should come from a system of record, and the reconciliation step that has to
+  accompany extracting them from prose.
+
 - Findings are ranked by what to fix first rather than only by severity, and
   `check` ends by naming the one to start with.
 
