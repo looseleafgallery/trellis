@@ -87,6 +87,11 @@ expensive to break.
 
 ### Fixed
 
+- A `#` inside a quoted value was treated as the start of a trailing comment
+  when rewriting a field, so `ref: "#20"` became `ref: TRE-5  #20"`. YAML read
+  that as `TRE-5` plus a comment, which meant the value was right, every test
+  passed, and the verify step approved a file it had corrupted.
+
 - A free-text field given something that is not one value is refused instead
   of coerced. `ref: [ENG-1599, ENG-1600]` used to load clean, render as the
   Python repr `['ENG-1599', 'ENG-1600']`, and never resolve — a value that
