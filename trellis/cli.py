@@ -1447,6 +1447,7 @@ def cmd_reconcile(args) -> int:
                         how=claim.how or "",
                         held=held,
                         reason=why,
+                        by=claim.by or "",
                     )
                 )
                 if held:
@@ -1476,6 +1477,14 @@ def cmd_reconcile(args) -> int:
     print(
         f"across all time: {total_wrong} of {total_checked} checked edges were wrong."
     )
+
+    per_source = journal.calibration_by_source(graph_dir)
+    if len(per_source) > 1:
+        # Only worth breaking out once more than one thing has annotated edges;
+        # before that the split says nothing the total did not.
+        print("by source:")
+        for name, (checked, bad) in per_source.items():
+            print(f"  {name:<24} {bad} of {checked} wrong")
     return 0
 
 

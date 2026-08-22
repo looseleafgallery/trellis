@@ -743,6 +743,20 @@ system of record), `stated` (someone said so), `inferred` (read out of prose,
 never confirmed), `assumed` (nobody said it). Closed on purpose — an open
 vocabulary could not be reported consistently.
 
+`by` records *what* believed it, and is open — a name the ecosystem agrees on,
+never parsed by trellis:
+
+```yaml
+evidence:
+  agent.reflect: {how: inferred, by: code-scanner}
+```
+
+Absent means a person, directly. It matters once more than one thing annotates
+edges, because calibration is only actionable per source: *the code scanner's
+inferred edges were wrong 4 of 9 times* tells you which annotations to trust,
+where an aggregate only tells you some are wrong. And it cannot be recovered
+later — an edge written without a source was never attributable.
+
 **The annotations turn out to be calibrated.** On the first real graph — 41
 nodes, 36 edges — 27 edges were annotated and 7 came out unconfirmed. Checking
 all 7 against the tracker found 2 wrong. None of the 27 marked `verified` were.

@@ -289,6 +289,7 @@ class EdgeClaim:
     target: str
     how: str | None = None
     at: str | None = None
+    by: str | None = None
     age_days: int | None = None
 
     @property
@@ -301,6 +302,7 @@ class EdgeClaim:
             "target": self.target,
             "how": self.how,
             "at": self.at,
+            "by": self.by,
             "age_days": self.age_days,
         }
 
@@ -328,6 +330,7 @@ def edges(graph: Graph, now: datetime | None = None) -> list[EdgeClaim]:
                     target=target,
                     how=item.how if item else None,
                     at=item.at if item else None,
+                    by=item.by if item else None,
                     age_days=age,
                 )
             )

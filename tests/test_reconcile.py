@@ -147,3 +147,142 @@ def test_a_graph_with_no_edges_says_so(tmp_path, capsys):
     (graph_dir / "g.yaml").write_text("id: a\nstatus: done\n")
     assert cli.main(["--graph", str(graph_dir), "reconcile"]) == 0
     assert "no gates yet" in capsys.readouterr().out
+
+
+# -- who believed it, not just how -------------------------------------------
+
+
+def test_a_source_is_parsed_and_kept():
+    from trellis.model import node_from_dict
+
+    node = node_from_dict(
+        {
+            "id": "c",
+            "status": "not_started",
+            "gates": {"start": "a.done"},
+            "evidence": {"a": {"how": "inferred", "by": "code-scanner"}},
+        }
+    )
+    item = node.evidence_map["a"]
+    assert item.by == "code-scanner"
+    assert item.source == "code-scanner"
+
+
+def test_an_unattributed_edge_is_grouped_not_guessed_at():
+    """Absent means a person, directly — what every edge written so far meant."""
+    from trellis.model import node_from_dict
+
+    node = node_from_dict(
+        {
+            "id": "c",
+            "status": "done",
+            "gates": {"start": "a.done"},
+            "evidence": {"a": "inferred"},
+        }
+    )
+    assert node.evidence_map["a"].by is None
+    assert node.evidence_map["a"].source == "unattributed"
+
+
+def test_a_source_does_not_change_the_fingerprint():
+    from trellis.model import node_from_dict
+
+    plain = node_from_dict(
+        {
+            "id": "c",
+            "status": "done",
+            "gates": {"start": "a.done"},
+            "evidence": {"a": "inferred"},
+        }
+    )
+    sourced = node_from_dict(
+        {
+            "id": "c",
+            "status": "done",
+            "gates": {"start": "a.done"},
+            "evidence": {"a": {"how": "inferred", "by": "code-scanner"}},
+        }
+    )
+    assert plain.fingerprint() == sourced.fingerprint()
+
+
+def test_an_overlay_does_not_drop_the_source():
+    """`with_overlay` rebuilds evidence dicts; it must carry `by` through."""
+    from trellis.model import Graph, node_from_dict
+
+    graph = Graph(
+        {
+            "a": node_from_dict({"id": "a", "status": "done"}),
+            "c": node_from_dict(
+                {
+                    "id": "c",
+                    "status": "not_started",
+                    "gates": {"start": "a.done"},
+                    "evidence": {"a": {"how": "inferred", "by": "code-scanner"}},
+                }
+            ),
+        }
+    )
+    moved = graph.with_overlay({"c": {"status": "in_progress"}})
+    assert moved.get("c").evidence_map["a"].by == "code-scanner"
+
+
+def test_the_outcome_records_who_believed_it(tmp_path, answers):
+    """Kept on the outcome rather than looked up later — a wrong edge is
+    usually deleted, so the source would be gone by then."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: a\n    status: done\n"
+        "  - id: c\n    status: not_started\n    gates: {start: a.done}\n"
+        "    evidence:\n      a: {how: inferred, by: code-scanner}\n"
+    )
+    answers("w", "not a real dependency", "q")
+    cli.main(["--graph", str(graph_dir), "reconcile"])
+
+    found = journal.outcomes(graph_dir)
+    assert found[0].by == "code-scanner"
+
+    # and it survives the edge being deleted
+    path = graph_dir / "g.yaml"
+    path.write_text(
+        path.read_text().replace("      a: {how: inferred, by: code-scanner}\n", "")
+    )
+    assert journal.outcomes(graph_dir)[0].by == "code-scanner"
+
+
+def test_calibration_splits_by_source(tmp_path):
+    from trellis.journal import Outcome, calibration_by_source, record_outcome
+
+    record_outcome(
+        tmp_path / "graph",
+        [
+            Outcome("c", "a", "inferred", False, by="code-scanner"),
+            Outcome("c", "b", "inferred", False, by="code-scanner"),
+            Outcome("c", "d", "inferred", True, by="code-scanner"),
+            Outcome("c", "e", "verified", True, by="linear"),
+            Outcome("c", "f", "verified", True, by="linear"),
+            Outcome("c", "g", "stated", True),
+        ],
+    )
+    assert calibration_by_source(tmp_path / "graph") == {
+        "code-scanner": (3, 2),
+        "linear": (2, 0),
+        "unattributed": (1, 0),
+    }
+
+
+def test_the_split_is_only_shown_when_it_says_something(tmp_path, answers, capsys):
+    """One source means the breakdown repeats the total."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: a\n    status: done\n"
+        "  - id: c\n    status: not_started\n    gates: {start: a.done}\n"
+        "    evidence: {a: inferred}\n"
+    )
+    answers("w", "", "q")
+    cli.main(["--graph", str(graph_dir), "reconcile"])
+    assert "by source:" not in capsys.readouterr().out

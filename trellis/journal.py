@@ -140,6 +140,10 @@ class Outcome:
     held: bool
     at: str = ""
     reason: str = ""
+    # Which extractor or corroborator believed the edge, recorded at the time
+    # it was checked. Kept on the outcome rather than looked up later, because
+    # the edge may be gone by then — a wrong one usually is.
+    by: str = ""
 
     @property
     def edge(self) -> tuple[str, str]:
@@ -152,6 +156,7 @@ class Outcome:
             "how": self.how,
             "held": self.held,
             "reason": self.reason,
+            "by": self.by,
         }
 
 
@@ -192,6 +197,7 @@ def outcomes(graph_dir: str | Path) -> list[Outcome]:
                     target=item.get("target", ""),
                     how=item.get("how", ""),
                     held=bool(item.get("held")),
+                    by=item.get("by", "") or "",
                     at=at,
                     reason=item.get("reason", "") or entry.get("reason") or "",
                 )
@@ -202,6 +208,24 @@ def outcomes(graph_dir: str | Path) -> list[Outcome]:
 def reconciled(graph_dir: str | Path) -> dict[tuple[str, str], Outcome]:
     """The most recent outcome per edge."""
     return {o.edge: o for o in outcomes(graph_dir)}
+
+
+def calibration_by_source(graph_dir: str | Path) -> dict[str, tuple[int, int]]:
+    """(checked, wrong) per source.
+
+    The number that changes behaviour. An aggregate tells you some annotations
+    are wrong; this tells you *whose*, which is the only version you can act
+    on without auditing a plugin's internals. Edges written before sources
+    existed group under "unattributed", which is honest — they were made by a
+    person, directly, and nothing recorded which.
+    """
+    out: dict[str, list[int]] = {}
+    for item in outcomes(graph_dir):
+        tally = out.setdefault(item.by or "unattributed", [0, 0])
+        tally[0] += 1
+        if not item.held:
+            tally[1] += 1
+    return {k: (v[0], v[1]) for k, v in sorted(out.items())}
 
 
 def calibration(graph_dir: str | Path) -> tuple[int, int]:
