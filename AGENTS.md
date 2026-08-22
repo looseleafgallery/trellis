@@ -322,6 +322,46 @@ Run `trellis doctor` and report what it says, verbatim, including the remedies.
 Do not soften it and do not editorialise. If it finds an undrafted contract,
 that is the most useful sentence in the whole session.
 
+## Where trellis belongs in your own work
+
+The commands below are for maintaining someone's graph. This section is about
+using it while you work, which is a different habit and the one that gets
+skipped.
+
+**At the start of a task, read the graph before asking the user anything.**
+`trellis ready` and `trellis check` answer "what is open" from the declaration
+rather than from a summary you generate, and the answer is identical every
+time it is asked. Re-deriving it in prose produces a slightly different, very
+dense answer on every run, and nobody can tell whether a change in the wording
+means a change in the work.
+
+**Before proposing structural work, model it.** Write the nodes and gates
+first, then run `check`. The tool objects to a bad model in a second, which is
+cheaper than a person objecting to it in review — and cheaper still than
+nobody objecting and the shape being wrong for a month. If your model needs a
+relationship nobody has worked out yet, that relationship is a **contract in
+`draft`**: name it, gate on it, and the work is correctly blocked on a
+decision rather than looking startable.
+
+**Before a change, run `impact`.** It reports what a status change unlocks,
+what it blocks, and which contracts go live. Saying "this unblocks the API
+work" without running it is exactly the class of unverified conclusion this
+project exists to catch.
+
+**After a change, go through `set`.** Never hand-edit a status. The write loop
+previews, verifies and journals the reason; a hand edit is drift and throws
+away the *why*, which is the part nothing else records.
+
+**When the user is not there, `--propose`.** Covered below.
+
+**Never `acknowledge`, `accept` or `reject` on the user's behalf.** Those are
+rulings, and a ruling you make for someone is a guess wearing a decision's
+clothes.
+
+The test for whether you used it: at the end of a task, could a person run
+`trellis check` and see what you did and why, without reading the conversation?
+If not, the work happened outside the loop.
+
 ## Ongoing use
 
 - `trellis ready` — what can be picked up now. Anything `awaiting` a decision

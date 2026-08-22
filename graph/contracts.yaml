@@ -48,3 +48,24 @@ nodes:
       in the trust layer keeps the engine honest but gives up the useful gate.
       This is the one that decides whether the roadmap goes further into
       beliefs at all.
+
+  - id: contract.decision_surface
+    title: What a decision must tell you before you make it
+    kind: contract
+    status: agreed
+    version: 0
+    satisfied_by: [hitl.decision_context]
+    notes: >
+      From the product owner, 22 Aug: a person choosing between options must
+      see the side effects each one produces, and as much context as the graph
+      already holds.
+
+      Modelled as a contract rather than a task because it binds every surface
+      that asks a person to decide - `review`, `reconcile`, and the proposal
+      queue - so it is one agreement rather than three conventions that drift.
+
+      Earned the hard way: `acknowledge` was chosen for five findings on the
+      strength of a one-word label, and its actual side effect - a permanent
+      ruling, visible to everyone, that suppresses the finding for good - was
+      never stated at the point of choosing.
+
