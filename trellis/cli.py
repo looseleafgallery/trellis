@@ -10,8 +10,8 @@ import sys
 from datetime import UTC
 from pathlib import Path
 
+from . import corroborate, edit, journal, queries, viz
 from . import delta as delta_mod
-from . import edit, journal, queries, viz
 from . import evidence as evidence_mod
 from . import snapshot as snapshot_mod
 from .cache import Cache
@@ -792,6 +792,9 @@ def cmd_doctor(args) -> int:
     findings: list[tuple[str, str, str]] = []
     for problem in problems:  # check() ranks these already
         findings.append((problem.severity, problem.node, problem.message))
+    # Everything appended below arrives after the ranked set, so the whole list
+    # is re-sorted before printing — otherwise a corroborator's `warn` prints
+    # under the kernel's `info`, and worst-first stops being true.
     for item in stale:
         findings.append(
             (
@@ -856,6 +859,15 @@ def cmd_doctor(args) -> int:
                 f"- that may have moved since",
             )
         )
+
+    # Corroborators last: they are the only findings the kernel did not
+    # establish itself, and they arrive already limited to info and warn.
+    external = corroborate.gather(graph_dir, snapshot_mod.capture(graph_dir, engine))
+    for finding in external:
+        label = finding.message or finding.code
+        findings.append((finding.severity, finding.node, label))
+
+    findings.sort(key=lambda f: (queries.SEVERITY_ORDER.get(f[0], 3), f[1]))
 
     if args.json:
         _emit(
