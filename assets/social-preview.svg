@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <rect width="1280" height="640" fill="#0b0c0b"></rect>
+  <g transform="translate(96,88) scale(1.25)">
+  <mask id="gap-s"><rect width="96" height="96" fill="#fff"></rect><path d="M48 20 L76 48 L48 76 L20 48 Z" fill="#000"></path></mask>
+  <clipPath id="box-s"><rect width="96" height="96"></rect></clipPath>
+  <g clip-path="url(#box-s)">
+    <g mask="url(#gap-s)" stroke="#eef0ee" stroke-width="9" fill="none">
+      <path d="M-40 -64 L136 112 M-40 -40 L136 136 M-40 -16 L136 160"></path>
+      <path d="M-40 112 L136 -64 M-40 136 L136 -40 M-40 160 L136 -16"></path>
+    </g>
+    <path d="M48 27 L69 48 L48 69 L27 48 Z" fill="#efa73c"></path>
+  </g>
+  </g>
+  <text x="96" y="360" font-family="Archivo, &#34;Helvetica Neue&#34;, Helvetica, Arial, sans-serif" font-weight="700" font-size="132" letter-spacing="-5" fill="#eef0ee">trellis</text>
+  <text x="96" y="432" font-family="Archivo, &#34;Helvetica Neue&#34;, Helvetica, Arial, sans-serif" font-weight="400" font-size="38" fill="#9aa39c">it disagrees with you</text>
+  <text x="96" y="484" font-family="Archivo, &#34;Helvetica Neue&#34;, Helvetica, Arial, sans-serif" font-weight="400" font-size="38" fill="#9aa39c">find out before reality does</text>
+  <text x="96" y="572" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" letter-spacing="2" fill="#6f766f">PURE COMPUTATION · NO DAEMON · MIT</text>
+</svg>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 300" width="1280" height="300">
+  <rect width="1280" height="300" fill="#f7f8f6"></rect>
+  <g transform="translate(72,86) scale(1.33)">
+  <mask id="gap-bl"><rect width="96" height="96" fill="#fff"></rect><path d="M48 20 L76 48 L48 76 L20 48 Z" fill="#000"></path></mask>
+  <clipPath id="box-bl"><rect width="96" height="96"></rect></clipPath>
+  <g clip-path="url(#box-bl)">
+    <g mask="url(#gap-bl)" stroke="#161a17" stroke-width="9" fill="none">
+      <path d="M-40 -64 L136 112 M-40 -40 L136 136 M-40 -16 L136 160"></path>
+      <path d="M-40 112 L136 -64 M-40 136 L136 -40 M-40 160 L136 -16"></path>
+    </g>
+    <path d="M48 27 L69 48 L48 69 L27 48 Z" fill="#b7752b"></path>
+  </g>
+  </g>
+  <text x="240" y="158" font-family="Archivo, &#34;Helvetica Neue&#34;, Helvetica, Arial, sans-serif" font-weight="700" font-size="86" letter-spacing="-3" fill="#161a17">trellis</text>
+  <text x="243" y="200" font-family="Archivo, &#34;Helvetica Neue&#34;, Helvetica, Arial, sans-serif" font-weight="400" font-size="24" fill="#5d635c">it disagrees with you</text>
+</svg>
