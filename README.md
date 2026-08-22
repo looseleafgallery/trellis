@@ -533,6 +533,42 @@ reported too. **Errors cannot be acknowledged.** A dangling reference or a cycle
 is a defect, not an opinion, and a graph that cannot evaluate must not be able
 to look clean. Acknowledging an error code is itself reported.
 
+### Corroborators
+
+A corroborator checks the declaration against a system trellis does not own:
+
+```
+# trellis.toml
+[corroborator.linear]
+command = ["trellis-linear-check"]
+```
+
+Snapshot JSON on stdin, findings on stdout, merged into `doctor`. It joins on
+`ref:` — which is what that field was for. Three constraints, each earned rather
+than chosen:
+
+**A corroborator may report `info` or `warn`, never `error`.** An error means the
+graph cannot be evaluated, and only the kernel can establish that. A
+disagreement with a tracker is a question, however confident. This also keeps
+ranking honest — external findings slot into known bands instead of competing
+with facts the kernel established itself.
+
+**Codes are namespaced** — `linear:state_disagrees`. You can see where a finding
+came from, and nothing external can impersonate a kernel diagnostic.
+
+**Failing is a finding, never a silence.** A corroborator that could not run has
+not told you the graph is fine:
+
+```
+? (graph): could not be checked against linear: 'trellis-linear-check' not
+  found. This is silence, not agreement - whatever it would have found is
+  unknown.
+```
+
+Corroborators and renderers are two of the three interfaces trellis exposes
+without owning what is on the other side; see
+[`docs/BOUNDARY.md`](docs/BOUNDARY.md) for where the line sits and why.
+
 ## Slices
 
 Two commands exist because a person cannot answer their question from memory
@@ -558,7 +594,8 @@ it is a mistake with a real instance behind it: someone told their team a node
 five. `unlocks` is computed through the same what-if path `impact` uses, so the
 two cannot drift apart.
 
-`trellis blocking --all` ranks every open node by what it is holding up.
+`trellis blocking --all` ranks every open node by what it is holding up —
+chokepoints, without having to guess where to look.
 
 And a picture:
 
@@ -763,19 +800,23 @@ that has to be right *before* an expensive evaluator exists.
 ## Layout
 
 ```
-trellis/model.py     declared nodes, graph, edge extraction
-trellis/expr.py      gate expression parsing, evaluation, traces
-trellis/engine.py    incremental evaluator, exports, violations
-trellis/cache.py     content-keyed memo store
-trellis/queries.py   check, ready, explain, impact
-trellis/delta.py     a proposed change, and its validation
-trellis/edit.py      YAML line surgery, with verify-or-restore
-trellis/journal.py   append-only record of what was applied
-trellis/evidence.py  volatility, staleness, provenance: challenge, never set
-trellis/propose.py   prose -> proposed delta (the only model call)
-trellis/cli.py       command line
-AGENTS.md            how an agent should bootstrap and maintain a graph
-examples/agent-loop  a pipeline with cross-subsystem contracts
+trellis/model.py        declared nodes, graph, edge extraction
+trellis/loader.py       one YAML file per node, read off disk
+trellis/expr.py         gate expression parsing, evaluation, traces
+trellis/engine.py       incremental evaluator, exports, violations
+trellis/cache.py        content-keyed memo store
+trellis/queries.py      check, ready, explain, impact
+trellis/delta.py        a proposed change, and its validation
+trellis/edit.py         YAML line surgery, with verify-or-restore
+trellis/journal.py      append-only record of what was applied
+trellis/snapshot.py     content-addressed point-in-time captures
+trellis/corroborate.py  external checks, merged into doctor
+trellis/viz.py          terminal, mermaid and html drawings
+trellis/evidence.py     volatility, staleness, provenance: challenge, never set
+trellis/propose.py      prose -> proposed delta (the only model call)
+trellis/cli.py          command line
+AGENTS.md               how an agent should bootstrap and maintain a graph
+examples/agent-loop     a pipeline with cross-subsystem contracts
 ```
 
 Contributors: see [CONTRIBUTING.md](CONTRIBUTING.md). Working with an agent:
