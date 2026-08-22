@@ -3,7 +3,7 @@ nodes:
     ref: TRE-6
     title: Decide tagging, releases, and whether PyPI happens
     status: not_started
-    awaiting: whether trellis publishes to PyPI under another distribution name
+    awaiting: ""
     notes: >
       Deliberately unparented: it belongs to no feature, which is itself
       the diagnostic - nobody owns distribution yet.
