@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import textwrap
 from datetime import UTC
 from pathlib import Path
 
@@ -1404,6 +1405,58 @@ def _review_one(
         print("  not one of the options")
 
 
+def _print_node_context(graph, engine, graph_dir, node_id: str) -> None:
+    """What the node is, before asking someone to rule on it.
+
+    All of this was already declared and none of it was shown, so a person was
+    asked to judge a node with the reasoning one field away. `core.concurrency`
+    is the case that prompted it: its note says the decision belongs to whoever
+    owns the node, which is the answer to the finding being raised.
+
+    Deliberately not everything the node carries. The header earns its lines
+    only by answering the question being asked, which is why `notes` and the
+    dependent count are here and `provides` is not.
+    """
+    if node_id not in graph:
+        return
+    node = graph.get(node_id)
+    if node.title:
+        print(f"  {node.title}")
+
+    # Declared status and derived readiness answer different questions: what
+    # someone typed, and whether the thing can actually be started.
+    readiness = engine.derived(node_id).readiness
+    facts = [f"{node.status}, {readiness}" if readiness != node.status else node.status]
+    if node.ref:
+        # Printed plainly. Turning `TRE-7` into a URL means knowing which
+        # tracker a ref belongs to, and the kernel deliberately does not.
+        facts.append(node.ref)
+    dependents = graph.dependents_of(node_id)
+    facts.append(
+        "nothing depends on it"
+        if not dependents
+        else f"{_count(len(dependents), 'node')} depend on it"
+    )
+    try:
+        path, line = edit.node_line(graph_dir, graph, node_id)
+        facts.append(f"{Path(path).name}:{line}")
+    except edit.EditError:
+        # A node declared in a shape the line-finder cannot locate still gets
+        # a header; only this convenience is lost.
+        pass
+    print(f"  {' · '.join(facts)}")
+
+    if node.notes:
+        body = " ".join(node.notes.split())
+        lines = textwrap.wrap(body, width=72)
+        # Capped so a long note cannot bury the findings it is context for.
+        shown, rest = lines[:5], lines[5:]
+        for index, line in enumerate(shown):
+            print(f"  {'note:' if index == 0 else '     '} {line}")
+        if rest:
+            print(f"        ... {_count(len(rest), 'more line')}, in the file")
+
+
 def _count(n: int, noun: str) -> str:
     """ "1 finding", "2 findings" - this is prose a person reads."""
     return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
@@ -1507,9 +1560,9 @@ def cmd_review(args) -> int:
     for node_index, (node_id, findings) in enumerate(groups, 1):
         if stop:
             break
-        title = graph.get(node_id).title if node_id in graph else ""
-        print(f"\n[node {node_index}/{len(groups)}] {node_id}  {title}")
-        print(f"  {_count(len(findings), 'finding')} on this node")
+        print(f"\n[node {node_index}/{len(groups)}] {node_id}")
+        _print_node_context(graph, engine, graph_dir, node_id)
+        print(f"\n  {_count(len(findings), 'finding')} on this node")
 
         for finding_index, problem in enumerate(findings, 1):
             # A change may have resolved findings further down the list. Showing
