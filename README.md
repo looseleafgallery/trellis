@@ -542,6 +542,48 @@ future timeline over them is an index query rather than a rebuild.
 They live in `snapshots/`, are meant to be committed, and are indexed in
 `snapshots/index.jsonl`.
 
+### Corroborators
+
+Checking the declaration against a system trellis does not own:
+
+```toml
+[corroborator.linear]
+command = ["trellis-linear-check"]
+```
+
+Snapshot JSON on stdin, findings on stdout, merged into `doctor`. It joins on
+`ref:` — which is what that field was for:
+
+```python
+out = [
+    {"node": n, "code": "state_disagrees", "severity": "warn",
+     "message": f"{r} is Done in the tracker"}
+    for n, r in snapshot["refs"].items() if done_in_tracker(r)
+]
+```
+
+Three constraints, each earned rather than chosen:
+
+**A corroborator may report `info` or `warn`, never `error`.** An error here
+means the graph cannot be evaluated, and only the kernel can establish that. A
+disagreement with a tracker is a question, however confident. This also keeps
+ranking honest — external findings slot into known bands instead of competing
+with facts the kernel established itself.
+
+**Codes are namespaced** — `linear:state_disagrees`. You can see where a
+finding came from, and nothing external can impersonate a kernel diagnostic.
+
+**Failing is a finding, never a silence.** A corroborator that could not run
+has not told you the graph is fine:
+
+```
+? (graph): could not be checked against linear: 'trellis-linear-check' not
+  found. This is silence, not agreement - whatever it would have found is
+  unknown.
+```
+
+See [`docs/BOUNDARY.md`](docs/BOUNDARY.md) for where this sits.
+
 ### Renderers
 
 Anything that reads JSON on stdin and writes an artifact on stdout:

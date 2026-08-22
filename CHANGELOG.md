@@ -11,6 +11,11 @@ expensive to break.
 
 ### Added
 
+- Corroborators: an external program that takes a snapshot and returns
+  findings, declared in `trellis.toml` and merged into `doctor`. It joins on
+  `ref:` and can never set state. Limited to `info` and `warn` — `error` means
+  the graph cannot evaluate, which only the kernel establishes. A corroborator
+  that fails to run reports that as a finding rather than passing silently.
 - `evidence:` accepts `by:`, naming what believed an edge — an extractor, a
   corroborator, a tool. `reconcile` records it on the outcome so it survives
   the edge being deleted, and reports calibration per source once more than one
