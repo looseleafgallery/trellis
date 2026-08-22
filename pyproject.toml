@@ -1,5 +1,8 @@
 [project]
-name = "trellis"
+# The import, the command and the tool are all `trellis`; only the
+# distribution differs, because `trellis` on PyPI is an abandoned 2008
+# alpha for something unrelated. See TRE-6.
+name = "trellis-kernel"
 version = "0.1.0"
 description = "Compute project state from a graph of work, gates, and contracts."
 requires-python = ">=3.11"

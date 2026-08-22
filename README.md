@@ -47,8 +47,9 @@ but an old pip can get you there in the first place.
 
 Or `pipx install git+https://github.com/looseleafgallery/trellis.git` for a
 global `trellis` command. There is no `pip install trellis`: that name belongs
-to an unrelated project on PyPI. The command, the import, and the tool are all
-`trellis` regardless.
+to an unrelated project on PyPI — an alpha last touched in 2008. When this is
+published it will be as **`trellis-kernel`**. The command, the import, and the
+tool are all `trellis` regardless; only the distribution name differs.
 
 No server, no account, nothing to configure. Then try it against the shipped
 example:

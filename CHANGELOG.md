@@ -11,6 +11,10 @@ expensive to break.
 
 ### Added
 
+- Decided the distribution name: **`trellis-kernel`**. `trellis` on PyPI is an
+  abandoned 2008 alpha for an unrelated project, so a PEP 541 reclaim request
+  is worth making, but nothing should wait on it. The import, the command and
+  the tool stay `trellis`; only the distribution differs.
 - The interactive loops say what each answer *does*, not just what it is
   called: acknowledging answers a finding for good, skipping defers it to the
   next run, quitting keeps everything answered so far. The remedies already
