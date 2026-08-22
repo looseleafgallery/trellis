@@ -1468,7 +1468,7 @@ def test_review_asks_about_one_node_at_a_time(split, answers, capsys):
 
     # every node introduced exactly once, and its findings numbered within it
     for node in ("alpha", "beta", "gamma"):
-        assert out.count(f"] {node}  ") == 1
+        assert out.count(f"] {node}\n") == 1
     assert "[node 1/3]" in out and "[node 3/3]" in out
 
     # nothing is asked about a node before that node has been introduced
@@ -1515,3 +1515,54 @@ def test_the_full_menu_comes_back_on_request(split, answers, capsys):
     cli.main(["--graph", str(split), "review"])
     out = capsys.readouterr().out
     assert out.count("leave it; it will be back next run") == 2
+
+
+def test_review_shows_the_node_before_asking_about_it(tmp_path, answers, capsys):
+    """The ruling context was already declared and simply was not printed.
+
+    `core.concurrency` is the case that prompted this: its note says the
+    decision belongs to whoever owns the node, which is the answer to the
+    finding being raised.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: solo\n"
+        "    title: Lock the writer\n"
+        "    status: not_started\n"
+        "    ref: TRE-7\n"
+        "    notes: >\n"
+        "      Known limitation. It has no edges because nothing genuinely\n"
+        "      waits on it - acknowledging that is a call for whoever owns it.\n"
+    )
+    answers("q")
+    cli.main(["--graph", str(graph_dir), "review"])
+    out = capsys.readouterr().out
+
+    assert "Lock the writer" in out, "title"
+    assert "TRE-7" in out, "the external item, printed plainly"
+    assert "nothing depends on it" in out, "blast radius"
+    assert "g.yaml:" in out, "where it is declared"
+    assert "acknowledging that is a call for whoever owns it" in out, "the note"
+    # printed plainly - turning a ref into a URL means knowing the tracker,
+    # which the kernel deliberately does not
+    assert "http" not in out
+
+
+def test_a_long_note_cannot_bury_the_findings(tmp_path, answers, capsys):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: solo\n"
+        "    title: Wordy\n"
+        "    status: not_started\n"
+        f"    notes: {'context ' * 200}\n"
+    )
+    answers("q")
+    cli.main(["--graph", str(graph_dir), "review"])
+    out = capsys.readouterr().out
+    assert "more lines, in the file" in out
+    note_block = [line for line in out.splitlines() if "context" in line]
+    assert len(note_block) == 5, "capped at five wrapped lines"

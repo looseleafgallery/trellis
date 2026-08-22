@@ -11,6 +11,15 @@ expensive to break.
 
 ### Added
 
+- `review` shows the node before asking you to rule on it: title, declared
+  status and derived readiness, `ref:`, how many nodes depend on it, where it
+  is declared, and the `notes:` the modeller wrote. All of it was already in
+  the graph and none of it was printed - `core.concurrency`'s note says the
+  decision belongs to whoever owns the node, which is the answer to the
+  finding being raised.
+- `ref:` is printed plainly. Turning `TRE-7` into a URL means knowing which
+  tracker a ref belongs to, and the kernel deliberately does not; that belongs
+  in configuration or a client.
 - The `--json` payload shape is pinned by tests. It is an interface: the human
   CLI is one client and everything else reads the JSON, so a key that quietly
   changes name breaks every consumer at once with no error anywhere. Values
