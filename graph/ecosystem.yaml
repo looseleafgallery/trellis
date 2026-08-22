@@ -1,0 +1,49 @@
+# The three interfaces the kernel exposes without owning what is on the other
+# side of them. Modelled because two are shipped and one was untracked - the
+# graph is where that asymmetry should have been visible, and was not.
+
+nodes:
+  - id: ecosystem
+    title: What plugs into the kernel
+    status: in_progress
+    notes: >
+      See docs/BOUNDARY.md. Renderer and corroborator are shipped; extractor
+      is not. Nothing on this side may set state - a renderer only reads, a
+      corroborator only challenges, an extractor only proposes.
+
+  - id: ecosystem.renderer
+    title: Snapshot in, artifact out
+    parent: ecosystem
+    status: done
+    provides: [renderer-interface]
+    notes: >
+      Never handed a path to the graph, only the snapshot on stdin, so
+      read-only is a property of the interface rather than a rule anyone has
+      to follow.
+
+  - id: ecosystem.corroborator
+    ref: "#56"
+    title: Check the declaration against a system trellis does not own
+    parent: ecosystem
+    status: done
+    provides: [corroborator-interface]
+    notes: >
+      info or warn but never error, namespaced codes, and failing to run is a
+      finding rather than a silence.
+
+  - id: ecosystem.extractor
+    ref: TRE-10
+    title: Propose a graph from a system trellis does not own
+    parent: ecosystem
+    status: not_started
+    gates:
+      finish: trust.scoring_is_reported
+    evidence:
+      trust: inferred
+    notes: >
+      An extractor that cannot be scored should not be trusted, so this is not
+      finishable until per-source calibration is reported. That edge is a
+      judgement, not a decision anyone made - it is inferred on purpose.
+
+      The risk it has to answer: an extractor must propose fewer nodes than it
+      finds. Nodes from a person, edges from code.

@@ -11,6 +11,18 @@ expensive to break.
 
 ### Added
 
+- `trust` reports provenance calibration split by `how` — `inferred` and
+  `assumed` are guesses of different confidence and an aggregate over them
+  answers no question anyone has. Ranked most-wrong first, which is the order
+  someone would work through them. Counts at every level, including in `--json`
+  where a consumer could divide them itself.
+- Calibration is reported whenever anything has been checked, not only while
+  unconfirmed edges remain. A graph whose edges have all since been confirmed
+  is where the number is most worth seeing, and it was the one case that
+  printed nothing.
+- `last checked` states the age of the evidence. The counts stay all-time on
+  purpose: windowing them would shrink a denominator that is already small,
+  so the age is stated rather than used to discard anything.
 - Corroborators: an external program that takes a snapshot and returns
   findings, declared in `trellis.toml` and merged into `doctor`. It joins on
   `ref:` and can never set state. Limited to `info` and `warn` — `error` means
@@ -97,6 +109,9 @@ expensive to break.
 
 ### Fixed
 
+- `trust` summarised calibration as "last time you checked, N of M were wrong"
+  while counting every pass ever recorded. It named a single pass and reported
+  all of them — a conclusion the tool had not verified, in its own output.
 - A `#` inside a quoted value was treated as the start of a trailing comment
   when rewriting a field, so `ref: "#20"` became `ref: TRE-5  #20"`. YAML read
   that as `TRE-5` plus a comment, which meant the value was right, every test

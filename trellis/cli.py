@@ -604,6 +604,80 @@ def cmd_history(args) -> int:
     return 0
 
 
+def _calibration(graph_dir) -> dict:
+    """What the annotations turned out to be worth, as data.
+
+    Counts, never rates, at every level - including here, where a consumer
+    could divide them itself. Handing over a rate would be this tool drawing
+    the conclusion it spends the rest of its output refusing to draw.
+    """
+    checked, wrong = journal.calibration(graph_dir)
+    return {
+        "checked": checked,
+        "wrong": wrong,
+        "by_how": {
+            k: {"checked": c, "wrong": w}
+            for k, (c, w) in journal.calibration_by_how(graph_dir).items()
+        },
+        "by_source": {
+            k: {"checked": c, "wrong": w}
+            for k, (c, w) in journal.calibration_by_source(graph_dir).items()
+        },
+        "last_checked": journal.last_checked(graph_dir),
+    }
+
+
+def _report_calibration(graph_dir) -> None:
+    """How often the annotations were wrong, split by what kind they are.
+
+    Printed whenever anything has been checked, not only while unconfirmed
+    edges remain. A graph where every edge has since been confirmed is exactly
+    where this number is most worth seeing, and it was the one case that
+    printed nothing at all.
+    """
+    checked, wrong = journal.calibration(graph_dir)
+    if not checked:
+        return
+    print(f"  checked so far: {wrong} of {checked} were wrong")
+
+    by_how = journal.calibration_by_how(graph_dir)
+    if len(by_how) > 1:
+        # One kind on its own says nothing the total did not. The split earns
+        # its lines only once there is something to compare.
+        for how, (count, bad) in by_how.items():
+            print(f"    {how:<22} {bad} of {count} wrong")
+
+    by_source = journal.calibration_by_source(graph_dir)
+    if len(by_source) > 1:
+        print("  by source:")
+        for name, (count, bad) in by_source.items():
+            print(f"    {name:<22} {bad} of {count} wrong")
+
+    at = journal.last_checked(graph_dir)
+    if at:
+        print(f"  last checked {at[:10]}{_ago(at)}")
+
+
+def _ago(stamp: str) -> str:
+    """ " (Nd ago)", or "" if the stamp cannot be read.
+
+    The counts are all-time on purpose - windowing them would shrink a
+    denominator that is already small. So the age of the evidence is stated
+    rather than used to discard it: a pass from a year ago and one from
+    yesterday produce identical counts, and this is what tells them apart.
+    """
+    from datetime import UTC, datetime
+
+    try:
+        when = datetime.fromisoformat(stamp)
+    except ValueError:
+        return ""
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    days = (datetime.now(UTC) - when).days
+    return " (today)" if days == 0 else f" ({days}d ago)"
+
+
 def cmd_trust(args) -> int:
     """Should you believe the declaration? Challenges only, never fixes."""
     graph, cache, graph_dir = _load(args)
@@ -631,6 +705,7 @@ def cmd_trust(args) -> int:
                 "unconfirmed_edges": [c.as_dict() for c in unconfirmed],
                 "stale_verifications": [c.as_dict() for c in aged],
                 "edge_coverage": {"annotated": annotated, "total": total_edges},
+                "calibration": _calibration(graph_dir),
                 "corrections": corrected,
             },
             True,
@@ -681,15 +756,12 @@ def cmd_trust(args) -> int:
         )
 
     if unconfirmed:
-        checked, wrong = journal.calibration(graph_dir)
-        header = "\nunconfirmed edges - believed, never checked:"
-        if checked:
-            # The number the annotation is worth: not how many are unchecked,
-            # but how often unchecked ones turned out to be wrong. Counts, never
-            # a rate — a small denominator invites being read as a property of
-            # the world rather than of one graph.
-            header += f"\n  last time you checked, {wrong} of {checked} were wrong."
-        print(header)
+        # What the checked ones turned out to be worth is reported once, under
+        # edge provenance below. It used to be summarised here as "last time
+        # you checked", which named a single pass while counting every pass
+        # ever recorded - a conclusion the tool had not verified, in its own
+        # output, which is the thing #41 is about.
+        print("\nunconfirmed edges - believed, never checked:")
         for claim in unconfirmed:
             print(f"  ? {claim.source} -> {claim.target}   ({claim.how})")
     if aged:
@@ -721,6 +793,7 @@ def cmd_trust(args) -> int:
                 f"\nedge provenance: none of {total_edges} edges are annotated - add "
                 f"`evidence:` to record which are checked and which are guesses"
             )
+        _report_calibration(graph_dir)
 
     anything = stale or churn or unknown or unconfirmed or aged or corrected
     if not anything:
