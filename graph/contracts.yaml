@@ -25,7 +25,7 @@ nodes:
   - id: contract.reconcile_outcome
     title: How the outcome of checking an edge is recorded
     kind: contract
-    status: draft
+    status: agreed
     version: 0
     satisfied_by: [trust.reconcile_loop]
     notes: >

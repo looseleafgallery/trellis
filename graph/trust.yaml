@@ -23,7 +23,7 @@ nodes:
     ref: "#40"
     title: Capture whether a checked edge held or was wrong
     parent: trust
-    status: not_started
+    status: done
     provides: [reconciliation-outcome]
     notes: >
       Surfaced by this graph rather than by a person: the contract had two
