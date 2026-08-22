@@ -69,6 +69,39 @@ def _fmt(value: object) -> str:
     return json.dumps(text)
 
 
+def _split_comment(rest: str) -> tuple[str, str]:
+    """Separate a scalar's value from any trailing comment.
+
+    A `#` only starts a comment outside quotes and after whitespace. Treating
+    every `#` as a comment turned `ref: "#20"` into `ref: TRE-5  #20"` on
+    rewrite — which still *parsed* as `TRE-5`, so the verify step passed while
+    the file gained garbage. Correct semantics, corrupt bytes.
+    """
+    text = rest.lstrip()
+    offset = len(rest) - len(text)
+    if text[:1] in ('"', "'"):
+        quote = text[0]
+        index = 1
+        while index < len(text):
+            if text[index] == "\\" and quote == '"':
+                index += 2
+                continue
+            if text[index] == quote:
+                index += 1
+                break
+            index += 1
+        after = text[index:]
+        hash_at = after.find("#")
+        if hash_at == -1:
+            return rest, ""
+        return rest[: offset + index + hash_at], after[hash_at:].strip()
+
+    for index, char in enumerate(text):
+        if char == "#" and (index == 0 or text[index - 1] in " \t"):
+            return rest[: offset + index], text[index:].strip()
+    return rest, ""
+
+
 def _indent_of(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
 
@@ -132,9 +165,8 @@ def _set_field(lines: list[str], node_id: str, field: str, value: object) -> lis
         rest = match.group(2)
         if rest.strip() in ("|", ">", "|-", ">-", "") and field != "parent":
             raise EditError(f"{node_id}: {field!r} is a block scalar; edit it by hand")
-        trailing = ""
-        if "#" in rest:
-            trailing = "  " + rest[rest.index("#") :].strip()
+        _value, comment = _split_comment(rest)
+        trailing = f"  {comment}" if comment else ""
         lines[i] = f"{match.group(1)}{field}: {_fmt(value)}{trailing}"
         return lines
 

@@ -1357,3 +1357,74 @@ def test_force_still_overrides(tmp_path, capsys):
     assert (
         cli.main(["--graph", str(graph_dir), "graph", "-f", "mermaid", "--force"]) == 0
     )
+
+
+# -- a `#` inside a value is not a comment -----------------------------------
+
+
+def test_a_hash_inside_a_quoted_value_is_not_treated_as_a_comment(tmp_path):
+    """`ref: "#20"` rewritten became `ref: TRE-5  #20"`.
+
+    YAML read that as `TRE-5` plus a comment, so every value matched and the
+    verify step passed while the file kept garbage. Correct semantics, corrupt
+    bytes — which is the shape that survives review.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text('id: a\nstatus: done\nref: "#20"\n')
+
+    cli.main(["--graph", str(graph_dir), "set", "a", "ref=TRE-5", "-y"])
+
+    line = next(
+        line
+        for line in (graph_dir / "g.yaml").read_text().splitlines()
+        if line.startswith("ref:")
+    )
+    assert line == "ref: TRE-5", f"file kept garbage: {line!r}"
+    assert load_graph(graph_dir).get("a").ref == "TRE-5"
+
+
+def test_a_real_trailing_comment_still_survives(tmp_path):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text("id: a\nstatus: done  # why it is done\n")
+
+    cli.main(["--graph", str(graph_dir), "set", "a", "status=abandoned", "-y"])
+    text = (graph_dir / "g.yaml").read_text()
+    assert "# why it is done" in text
+    assert load_graph(graph_dir).get("a").status == "abandoned"
+
+
+def test_a_hash_inside_a_value_being_written_is_quoted(tmp_path):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text("id: a\nstatus: done\n")
+
+    cli.main(["--graph", str(graph_dir), "set", "a", "ref=#123", "-y"])
+    assert load_graph(graph_dir).get("a").ref == "#123"
+    # round-trips: writing it again must not eat it
+    cli.main(["--graph", str(graph_dir), "set", "a", "ref=#456", "-y"])
+    assert load_graph(graph_dir).get("a").ref == "#456"
+    line = next(
+        line
+        for line in (graph_dir / "g.yaml").read_text().splitlines()
+        if line.startswith("ref:")
+    )
+    assert line == 'ref: "#456"'
+
+
+@pytest.mark.parametrize(
+    "rest,value,comment",
+    [
+        (' "#20"', ' "#20"', ""),
+        (" TRE-5  # a real comment", " TRE-5  ", "# a real comment"),
+        (" plain", " plain", ""),
+        (' "quoted # inside"  # after', ' "quoted # inside"  ', "# after"),
+        (" '#7'", " '#7'", ""),
+        (" value#nospace", " value#nospace", ""),
+    ],
+)
+def test_comment_splitting(rest, value, comment):
+    from trellis.edit import _split_comment
+
+    assert _split_comment(rest) == (value, comment)

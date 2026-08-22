@@ -1,6 +1,6 @@
 nodes:
   - id: dist.release_process
-    ref: TRE-6  #8"
+    ref: TRE-6
     title: Decide tagging, releases, and whether PyPI happens
     status: not_started
     awaiting: whether trellis publishes to PyPI under another distribution name
@@ -9,7 +9,7 @@ nodes:
       the diagnostic - nobody owns distribution yet.
 
   - id: core.concurrency
-    ref: TRE-7  #7"
+    ref: TRE-7
     title: Lock the writer against concurrent edits
     status: not_started
     notes: >
