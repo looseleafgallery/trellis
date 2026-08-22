@@ -11,6 +11,11 @@ expensive to break.
 
 ### Added
 
+- The `--json` payload shape is pinned by tests. It is an interface: the human
+  CLI is one client and everything else reads the JSON, so a key that quietly
+  changes name breaks every consumer at once with no error anywhere. Values
+  stay free to change; keys are the contract, and changing one now means
+  editing the expected shape in the same commit.
 - `review` asks about one **node** at a time rather than walking a flat list of
   findings. Ranking by urgency alone split a node's findings apart, so a node
   could come back several findings later with nothing saying you had already
@@ -147,6 +152,9 @@ expensive to break.
 
 ### Fixed
 
+- `trellis deps --json` printed a heading before the payload, so its output was
+  not JSON and no consumer could parse it. Found by the new interface guard on
+  its first run. It now emits `{node, direction, nodes}` and nothing else.
 - Ctrl-C is a stop, not a crash. `KeyboardInterrupt` reached the user as a raw
   traceback from any command, which left nobody able to tell whether anything
   had been written. It now says so plainly and exits 130.

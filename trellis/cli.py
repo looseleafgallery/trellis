@@ -1937,15 +1937,27 @@ def cmd_deps(args) -> int:
     args.node = _resolve(graph, requested)
     if args.node is None:
         return _unknown(graph, requested)
-    if args.reverse:
-        ids = graph.dependents_of(args.node)
-        print(f"nodes that depend on {args.node}:")
-    else:
-        ids = graph.dependencies_of(args.node)
-        print(f"{args.node} depends on:")
+    reverse = args.reverse
+    ids = (
+        graph.dependents_of(args.node) if reverse else graph.dependencies_of(args.node)
+    )
     if args.json:
-        _emit(list(ids), True)
+        # The heading used to print before this check, so every `--json` run
+        # emitted a line of prose ahead of the payload and no consumer could
+        # parse it. Under --json the payload is the whole of stdout.
+        _emit(
+            {
+                "node": args.node,
+                "direction": "dependents" if reverse else "dependencies",
+                "nodes": list(ids),
+            },
+            True,
+        )
         return 0
+
+    print(
+        f"nodes that depend on {args.node}:" if reverse else f"{args.node} depends on:"
+    )
     for node_id in ids:
         print(f"  {node_id}  {graph.get(node_id).title}")
     if not ids:
