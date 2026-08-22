@@ -911,8 +911,10 @@ def test_review_explain_does_not_consume_the_finding(tmp_path, answers, capsys):
     cli.main(["--graph", str(graph_dir), "review"])
     out = capsys.readouterr().out
     # explain returned to the same finding rather than advancing
-    assert out.count("[1/") == 1
-    assert "[2/" in out  # skip advanced it
+    assert out.count("(1/2)") == 1
+    assert "(2/2)" in out  # skip advanced it
+    # and both findings sat under one node header, shown once
+    assert out.count("[node 1/") == 1
 
 
 def test_review_reloads_after_a_change(tmp_path, answers):
@@ -1428,3 +1430,88 @@ def test_comment_splitting(rest, value, comment):
     from trellis.edit import _split_comment
 
     assert _split_comment(rest) == (value, comment)
+
+
+SPLIT_GRAPH = """nodes:
+  - id: alpha
+    title: Alpha
+    status: not_started
+  - id: beta
+    title: Beta
+    kind: contract
+    status: draft
+  - id: gamma
+    title: Gamma
+    status: not_started
+    gates: {start: beta.agreed}
+"""
+
+
+@pytest.fixture
+def split(tmp_path):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(SPLIT_GRAPH)
+    return graph_dir
+
+
+def test_review_asks_about_one_node_at_a_time(split, answers, capsys):
+    """Ranking by urgency alone splits a node's findings apart.
+
+    A node's mild finding sorts far below its urgent one, so the same node
+    comes back pages later with nothing saying you already made decisions
+    about it.
+    """
+    answers(*(["s"] * 12))
+    cli.main(["--graph", str(split), "review"])
+    out = capsys.readouterr().out
+
+    # every node introduced exactly once, and its findings numbered within it
+    for node in ("alpha", "beta", "gamma"):
+        assert out.count(f"] {node}  ") == 1
+    assert "[node 1/3]" in out and "[node 3/3]" in out
+
+    # nothing is asked about a node before that node has been introduced
+    seen = None
+    for line in out.splitlines():
+        if line.startswith("[node "):
+            seen = line
+        if line.startswith("("):
+            assert seen is not None
+
+
+def test_acknowledging_a_whole_node_asks_why_once(split, answers, capsys):
+    """One decision, so one reason.
+
+    Asking per finding makes a person type the same sentence twice, and what
+    gets typed the second time is not worth journaling.
+    """
+    # beta sorts first and raises two findings; A takes both with one reason
+    answers("A", "genuinely standalone", "s", "s", "s")
+    cli.main(["--graph", str(split), "review"])
+
+    text = (split / "g.yaml").read_text()
+    assert "acknowledge:" in text
+    reasons = [
+        e.get("reason") for e in journal.read(split) if e.get("origin") == "acknowledge"
+    ]
+    assert len(reasons) == 2, "both findings acknowledged"
+    assert set(reasons) == {"genuinely standalone"}, "one reason, recorded on both"
+
+
+def test_a_key_is_explained_the_first_time_it_appears(split, answers, capsys):
+    """Compacting after the first finding would hide `a` on a run that opens
+    with an error, since errors cannot be acknowledged."""
+    answers(*(["s"] * 12))
+    cli.main(["--graph", str(split), "review"])
+    out = capsys.readouterr().out
+    # explained once, then compacted - not explained under every finding
+    assert out.count("answer it for good") == 1
+    assert "? for help" in out
+
+
+def test_the_full_menu_comes_back_on_request(split, answers, capsys):
+    answers("?", "q")
+    cli.main(["--graph", str(split), "review"])
+    out = capsys.readouterr().out
+    assert out.count("leave it; it will be back next run") == 2

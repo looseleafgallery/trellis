@@ -1257,28 +1257,28 @@ def _open_editor(path, line: int) -> bool:
     return True
 
 
-def _review_one(args, graph, cache, graph_dir, engine, problem, index, total) -> str:
-    """Show one finding and act on the answer. Returns the action taken."""
-    print(f"\n[{index}/{total}] {problem.severity}  {problem.node}")
-    for line in problem.message.splitlines():
-        print(f"  {line.strip()}")
-    remedy = REMEDIES.get(problem.code)
-    if remedy:
-        print(f"  -> {remedy}")
-
-    # A key and a one-word label leave the consequence unsaid, and the
-    # consequences here differ sharply: acknowledging answers a finding for
-    # good, skipping defers it to the next run. The remedies above already
-    # arrive as instructions; the moment a person has to act deserves the same.
-    choices = []
+def _choices(graph, problem, siblings: int) -> list[tuple[str, str, str]]:
+    """The options for one finding, each with what taking it does."""
+    out = []
     fix = DIRECT_FIX.get(problem.code)
     if fix and problem.node in graph:
-        choices.append(("f", "fix", f"{fix[2]}; previewed and confirmed as usual"))
+        out.append(("f", "fix", f"{fix[2]}; previewed and confirmed as usual"))
     if problem.severity != "error":
-        choices.append(
+        out.append(
             ("a", "acknowledge", "answer it for good; asks why, and stays counted")
         )
-    choices += [
+        if siblings:
+            # "this node is fine, stop asking" is what a person means when a
+            # node raises several of these. Answering it once per finding is
+            # the same decision typed twice.
+            out.append(
+                (
+                    "A",
+                    "ack all",
+                    f"acknowledge this and the other {siblings} on this node",
+                )
+            )
+    out += [
         ("x", "explain", "show the reasoning; does not consume the finding"),
         (
             "e",
@@ -1290,22 +1290,70 @@ def _review_one(args, graph, cache, graph_dir, engine, problem, index, total) ->
         ("s", "skip", "leave it; it will be back next run"),
         ("q", "quit", "stop here; everything answered so far is kept"),
     ]
+    return out
+
+
+def _full_menu(choices) -> str:
     width = max(len(label) for _key, label, _help in choices)
-    menu = "\n".join(
+    return "\n".join(
         f"  [{key}] {label.ljust(width)}  {detail}" for key, label, detail in choices
     )
 
+
+def _review_one(
+    args,
+    graph,
+    cache,
+    graph_dir,
+    engine,
+    problem,
+    label: str,
+    siblings: int = 0,
+    explained: set[str] | None = None,
+) -> str:
+    """Show one finding and act on the answer. Returns the action taken."""
+    print(f"\n{label} {problem.severity}  {problem.code}")
+    for line in problem.message.splitlines():
+        print(f"  {line.strip()}")
+    remedy = REMEDIES.get(problem.code)
+    if remedy:
+        print(f"  -> {remedy}")
+
+    # A key and a one-word label leave the consequence unsaid, and the
+    # consequences here differ sharply: acknowledging answers a finding for
+    # good, skipping defers it to the next run. Shown in full once, then
+    # compacted - the descriptions are what make it learnable, and repeating
+    # them under every finding is what makes them noise.
+    choices = _choices(graph, problem, siblings)
+    keys = "/".join(key for key, _label, _detail in choices)
+
+    # Compacting after the first finding hides any key that was not on offer
+    # then - `a` never appears on an error, so a run starting with one would
+    # show `[a/x/e/s/q]` having never said what `a` does. Full menu whenever it
+    # carries a key nobody has seen explained yet.
+    seen = explained if explained is not None else set()
+    novel = {key for key, _label, _detail in choices} - seen
+
     while True:
-        print(f"\n{menu}")
+        print(f"\n{_full_menu(choices)}" if novel else f"\n  [{keys}]  ? for help")
+        seen.update(key for key, _label, _detail in choices)
+        novel = set()
         try:
-            answer = input("> ").strip().lower()
+            answer = input("> ").strip()
         except EOFError:
             return "quit"
+        if answer != "A":
+            answer = answer.lower()
 
+        if answer == "?":
+            novel = {"?"}  # any non-empty set re-shows the full menu
+            continue
         if answer in ("q", "quit"):
             return "quit"
         if answer in ("s", "skip", ""):
             return "skip"
+        if answer == "A" and siblings and problem.severity != "error":
+            return "ack_all"
 
         if answer in ("x", "explain"):
             reasons = queries.explain(engine, problem.node)
@@ -1341,7 +1389,8 @@ def _review_one(args, graph, cache, graph_dir, engine, problem, index, total) ->
             print(f"  acknowledged {problem.code} on {problem.node}")
             return "acknowledged"
 
-        if answer in ("f", "fix") and fix:
+        fix = DIRECT_FIX.get(problem.code)
+        if answer in ("f", "fix") and fix and problem.node in graph:
             field, value, _label = fix
             delta = delta_mod.Delta(
                 changes=[delta_mod.ProposedChange(problem.node, field, value)],
@@ -1353,6 +1402,66 @@ def _review_one(args, graph, cache, graph_dir, engine, problem, index, total) ->
             return "fixed" if code == 0 else "skip"
 
         print("  not one of the options")
+
+
+def _count(n: int, noun: str) -> str:
+    """ "1 finding", "2 findings" - this is prose a person reads."""
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def _by_node(problems) -> list[tuple[str, list]]:
+    """Findings grouped by node, nodes in most-urgent-first order.
+
+    A person answers "does this node look right", not seven unrelated
+    questions. Ungrouped, a node's mild finding sorts far below its urgent one
+    and the same node comes back pages later with nothing saying you have
+    already made three decisions about it.
+
+    `problems` arrives urgency-sorted, so first appearance orders the nodes and
+    the first node is still the one to start with.
+    """
+    order: list[str] = []
+    groups: dict[str, list] = {}
+    for problem in problems:
+        if problem.node not in groups:
+            groups[problem.node] = []
+            order.append(problem.node)
+        groups[problem.node].append(problem)
+    return [(node, groups[node]) for node in order]
+
+
+def _acknowledge_all(graph_dir, graph, findings, tally: dict) -> str:
+    """Answer every remaining finding on one node, with one reason.
+
+    The reason is asked once because it is one decision. Asking per finding
+    would make a person type the same sentence three times, and what gets typed
+    the third time is not worth journaling.
+    """
+    try:
+        reason = input("  why? (enter to skip) ").strip() or None
+    except EOFError:
+        reason = None
+
+    done = 0
+    for problem in findings:
+        try:
+            write = edit.acknowledge(graph_dir, graph, problem.node, problem.code)
+        except edit.EditError as exc:
+            print(f"  error on {problem.code}: {exc}")
+            continue
+        journal.record(
+            graph_dir,
+            "acknowledge",
+            f"acknowledged {problem.code} on {problem.node}",
+            [write],
+            reason=reason,
+        )
+        done += 1
+    print(f"  acknowledged {done} finding(s) on {findings[0].node}")
+    # The first is counted by the caller; the rest are counted here.
+    for _ in range(done - 1):
+        tally["acknowledged"] = tally.get("acknowledged", 0) + 1
+    return "acknowledged"
 
 
 def cmd_review(args) -> int:
@@ -1383,33 +1492,68 @@ def cmd_review(args) -> int:
         print(f"nothing to review across {len(graph)} nodes{tail}")
         return 0
 
-    print(f"{len(problems)} finding(s), most urgent first.")
+    groups = _by_node(problems)
+    print(
+        f"{_count(len(problems), 'finding')} across "
+        f"{_count(len(groups), 'node')}, most urgent first."
+    )
     if muted:
         print(f"{muted} already acknowledged and not shown.")
 
     tally: dict[str, int] = {}
     live = {(p.node, p.code, p.message) for p in problems}
-    for index, problem in enumerate(problems, 1):
-        # A change may have resolved findings further down the list. Showing one
-        # that no longer fires would be worse than not showing it: the whole
-        # point is that these are true right now.
-        if (problem.node, problem.code, problem.message) not in live:
-            tally["resolved"] = tally.get("resolved", 0) + 1
-            continue
-
-        action = _review_one(
-            args, graph, cache, graph_dir, engine, problem, index, len(problems)
-        )
-        tally[action] = tally.get(action, 0) + 1
-        if action == "quit":
+    explained: set[str] = set()
+    stop = False
+    for node_index, (node_id, findings) in enumerate(groups, 1):
+        if stop:
             break
-        if action in ("acknowledged", "fixed", "edited"):
-            # The graph on disk changed, so re-read it and recompute what is
-            # still true. The position in the list is kept; the contents are not
-            # assumed to be.
-            graph, cache, graph_dir = _load(args)
-            engine = Engine(graph, cache)
-            live = {(p.node, p.code, p.message) for p in queries.check(graph, engine)}
+        title = graph.get(node_id).title if node_id in graph else ""
+        print(f"\n[node {node_index}/{len(groups)}] {node_id}  {title}")
+        print(f"  {_count(len(findings), 'finding')} on this node")
+
+        for finding_index, problem in enumerate(findings, 1):
+            # A change may have resolved findings further down the list. Showing
+            # one that no longer fires would be worse than not showing it: the
+            # whole point is that these are true right now.
+            if (problem.node, problem.code, problem.message) not in live:
+                tally["resolved"] = tally.get("resolved", 0) + 1
+                continue
+
+            remaining = [
+                f
+                for f in findings[finding_index:]
+                if (f.node, f.code, f.message) in live and f.severity != "error"
+            ]
+            action = _review_one(
+                args,
+                graph,
+                cache,
+                graph_dir,
+                engine,
+                problem,
+                label=f"({finding_index}/{len(findings)})",
+                siblings=len(remaining),
+                explained=explained,
+            )
+
+            if action == "ack_all":
+                action = _acknowledge_all(
+                    graph_dir, graph, [problem, *remaining], tally
+                )
+
+            tally[action] = tally.get(action, 0) + 1
+            if action == "quit":
+                stop = True
+                break
+            if action in ("acknowledged", "fixed", "edited"):
+                # The graph on disk changed, so re-read it and recompute what is
+                # still true. The position in the list is kept; the contents are
+                # not assumed to be.
+                graph, cache, graph_dir = _load(args)
+                engine = Engine(graph, cache)
+                live = {
+                    (p.node, p.code, p.message) for p in queries.check(graph, engine)
+                }
 
     print()
     done = {k: v for k, v in tally.items() if k != "quit"}

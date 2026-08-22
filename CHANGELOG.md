@@ -11,6 +11,18 @@ expensive to break.
 
 ### Added
 
+- `review` asks about one **node** at a time rather than walking a flat list of
+  findings. Ranking by urgency alone split a node's findings apart, so a node
+  could come back several findings later with nothing saying you had already
+  made three decisions about it. Nodes are still ordered by their most urgent
+  finding, so the first node is still the one to start with.
+- `A` acknowledges every remaining finding on the current node, asking for the
+  reason once. "This node is fine, stop asking" was previously the same
+  decision typed once per finding.
+- The option descriptions are shown in full the first time a key appears and
+  compacted afterwards, with `?` to bring them back. Explaining them under
+  every finding is what turned them into noise; explaining them only on the
+  first finding would have hidden `a`, which never appears on an error.
 - Decided the distribution name: **`trellis-kernel`**. `trellis` on PyPI is an
   abandoned 2008 alpha for an unrelated project, so a PEP 541 reclaim request
   is worth making, but nothing should wait on it. The import, the command and
