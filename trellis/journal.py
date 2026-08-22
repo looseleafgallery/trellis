@@ -172,10 +172,20 @@ def record_outcome(
     path = journal_path(graph_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     wrong = sum(1 for o in outcomes if not o.held)
+    if len(outcomes) == 1:
+        # Outcomes are recorded one at a time as they are judged, so the common
+        # entry is a single edge. "checked 1 edge(s), 0 wrong" says less than
+        # naming it, and `history` is read by people.
+        only = outcomes[0]
+        text = f"checked {only.source} -> {only.target}: " + (
+            "held" if only.held else "wrong"
+        )
+    else:
+        text = f"checked {len(outcomes)} edge(s), {wrong} wrong"
     entry = {
         "at": datetime.now(UTC).isoformat(timespec="seconds"),
         "origin": "reconcile",
-        "text": f"checked {len(outcomes)} edge(s), {wrong} wrong",
+        "text": text,
         "reason": reason,
         "writes": [],
         "outcomes": [o.as_dict() for o in outcomes],

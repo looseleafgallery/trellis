@@ -11,6 +11,12 @@ expensive to break.
 
 ### Added
 
+- The interactive loops say what each answer *does*, not just what it is
+  called: acknowledging answers a finding for good, skipping defers it to the
+  next run, quitting keeps everything answered so far. The remedies already
+  arrived as instructions; the moment a person has to act now does too.
+- The `edit` option says when `$EDITOR` is unset instead of offering a choice
+  that fails when taken.
 - A durable proposal queue. `set`/`log --propose` queue a validated, previewed
   delta instead of writing it; `pending`, `accept` and `reject` decide it later.
   Stored in `history/proposals.jsonl`, committed and append-only — a proposal
@@ -125,6 +131,13 @@ expensive to break.
 
 ### Fixed
 
+- Ctrl-C is a stop, not a crash. `KeyboardInterrupt` reached the user as a raw
+  traceback from any command, which left nobody able to tell whether anything
+  had been written. It now says so plainly and exits 130.
+- `reconcile` records each judgement when it is made rather than when the loop
+  finishes. `q` kept every answer while Ctrl-C threw them all away - two ways
+  out of one loop with opposite consequences, and these are judgements a person
+  cannot reproduce. One path now.
 - `trust` summarised calibration as "last time you checked, N of M were wrong"
   while counting every pass ever recorded. It named a single pass and reported
   all of them — a conclusion the tool had not verified, in its own output.

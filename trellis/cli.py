@@ -1238,8 +1238,12 @@ DIRECT_FIX = {
 }
 
 
+def _editor() -> str:
+    return os.environ.get("EDITOR") or os.environ.get("VISUAL") or ""
+
+
 def _open_editor(path, line: int) -> bool:
-    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL")
+    editor = _editor()
     if not editor:
         print(f"  no $EDITOR set - the node is at {path}:{line}")
         return False
@@ -1262,17 +1266,37 @@ def _review_one(args, graph, cache, graph_dir, engine, problem, index, total) ->
     if remedy:
         print(f"  -> {remedy}")
 
+    # A key and a one-word label leave the consequence unsaid, and the
+    # consequences here differ sharply: acknowledging answers a finding for
+    # good, skipping defers it to the next run. The remedies above already
+    # arrive as instructions; the moment a person has to act deserves the same.
     choices = []
     fix = DIRECT_FIX.get(problem.code)
     if fix and problem.node in graph:
-        choices.append(("f", f"fix ({fix[2]})"))
+        choices.append(("f", "fix", f"{fix[2]}; previewed and confirmed as usual"))
     if problem.severity != "error":
-        choices.append(("a", "acknowledge"))
-    choices += [("x", "explain"), ("e", "edit"), ("s", "skip"), ("q", "quit")]
-    menu = "  ".join(f"[{key}] {label}" for key, label in choices)
+        choices.append(
+            ("a", "acknowledge", "answer it for good; asks why, and stays counted")
+        )
+    choices += [
+        ("x", "explain", "show the reasoning; does not consume the finding"),
+        (
+            "e",
+            "edit",
+            f"open {_editor()} at this node's line"
+            if _editor()
+            else "no $EDITOR set - prints the file and line instead",
+        ),
+        ("s", "skip", "leave it; it will be back next run"),
+        ("q", "quit", "stop here; everything answered so far is kept"),
+    ]
+    width = max(len(label) for _key, label, _help in choices)
+    menu = "\n".join(
+        f"  [{key}] {label.ljust(width)}  {detail}" for key, label, detail in choices
+    )
 
     while True:
-        print(f"\n  {menu}")
+        print(f"\n{menu}")
         try:
             answer = input("> ").strip().lower()
         except EOFError:
@@ -1684,7 +1708,13 @@ def cmd_reconcile(args) -> int:
             print(f"  last checked {prior.at[:10]}: {outcome}")
 
         while True:
-            print("\n  [h] held  [w] wrong  [s] skip  [q] quit")
+            print(
+                "\n  [h] held   this edge is real; recorded now\n"
+                "  [w] wrong  this edge should not exist; recorded now, and the\n"
+                "             edge itself is yours to correct\n"
+                "  [s] skip   leave it unchecked; it will be back next run\n"
+                "  [q] quit   stop here; everything answered so far is kept"
+            )
             try:
                 answer = input("> ").strip().lower()
             except EOFError:
@@ -1700,16 +1730,20 @@ def cmd_reconcile(args) -> int:
                     why = input("  why? (enter to skip) ").strip()
                 except EOFError:
                     why = ""
-                found.append(
-                    journal.Outcome(
-                        source=claim.source,
-                        target=claim.target,
-                        how=claim.how or "",
-                        held=held,
-                        reason=why,
-                        by=claim.by or "",
-                    )
+                outcome = journal.Outcome(
+                    source=claim.source,
+                    target=claim.target,
+                    how=claim.how or "",
+                    held=held,
+                    reason=why,
+                    by=claim.by or "",
                 )
+                # Written now, not when the loop happens to finish. These are
+                # judgements a person cannot reproduce - the same argument the
+                # journal itself rests on - and recording at the end meant `q`
+                # kept them while Ctrl-C threw them away. One path now.
+                journal.record_outcome(graph_dir, [outcome])
+                found.append(outcome)
                 if held:
                     # Writing `evidence:` is a structural edit, which the writer
                     # does not do. Hand over the line rather than guess at it.
@@ -1729,7 +1763,6 @@ def cmd_reconcile(args) -> int:
         print("\nnothing recorded.")
         return 0
 
-    journal.record_outcome(graph_dir, found)
     cache.save()
     bad = sum(1 for o in found if not o.held)
     print(f"\nrecorded {len(found)} outcome(s), {bad} wrong.")
@@ -2079,6 +2112,13 @@ def main(argv: list[str] | None = None) -> int:
     except KeyError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    except KeyboardInterrupt:
+        # A traceback here is the tool failing to be the thing that catches
+        # you, and it leaves nobody able to tell whether anything was written.
+        # Every loop that collects judgements records them as it goes, so the
+        # honest thing to say is that stopping costs nothing.
+        print("\nstopped. anything already recorded was kept.", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":
