@@ -299,9 +299,54 @@ the write is reported as failed. Only scalar fields (`status`, `version`,
 and belongs in your editor. New nodes are written to their own file rather than
 appended into an existing one.
 
-Every applied change is appended to `.trellis/journal.jsonl` with the sentence
+Every applied change is appended to `history/journal.jsonl` with the sentence
 that produced it. The YAML holds current state and git holds the diffs; neither
 holds the *why*.
+
+### Propose now, decide later
+
+Something models and someone decides, and they are almost never at the keyboard
+at the same time. Without somewhere to put it, "this was proposed and nobody
+has ruled on it" ends up in prose in another system — a second place to be
+wrong. So a write can be queued instead:
+
+```
+trellis set a status=done --propose --because "tests green, awaiting review"
+trellis pending
+trellis accept p3
+trellis reject p4 --because "that was a different branch"
+```
+
+Queuing happens **after** the preview, not instead of it. Whoever proposes
+still sees what it would do; it is the person deciding who is elsewhere.
+
+**Accepting recomputes, it does not replay.** A proposal made on Tuesday may
+unlock something different by Friday, or create a violation it did not before.
+Showing you the preview captured at propose time would be the CI badge that was
+true when it ran, so the consequence is computed against the graph as it is
+when you accept.
+
+That leaves two different ways a queued proposal can go bad, and they get
+different answers:
+
+- **the node moved** — what you proposed against is not what is there now.
+  Refused, naming the node. This is an identity question and the fingerprint
+  answers it exactly; because the fingerprint is semantic, rewording a `notes:`
+  block does not cost you a pending decision.
+- **the consequence changed** — it still applies cleanly, it just does
+  something else now. Re-previewed, not refused. A graph that moves around a
+  live proposal is normal, and refusing there would make the queue unusable.
+
+**Rejections are kept, with their reason.** Propose the same change again and
+it says when it was turned down and why — told, not refused, because the same
+change can be right later. That is what stops a rejected proposal arriving
+every month with nobody able to remember what was wrong with it.
+
+Proposals live in `history/proposals.jsonl`, committed, append-only: an accept
+or reject is a later record, never an edit to the proposal. `trust` challenges
+anything sitting undecided for three weeks, because a queue nobody empties is a
+worse place for a decision than the prose it replaced — it looks handled.
+
 
 ### trellis owns the state machine
 

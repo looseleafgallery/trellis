@@ -386,6 +386,30 @@ it. If the user made the edit deliberately, `trellis drift --accept --because
 behalf without asking why it happened: the reason is the whole point, and it is
 the part a hand edit threw away.
 
+## When the person is not there
+
+You will often finish modelling in a session the user is not in. A change you
+believe in but cannot get confirmed does not go in your summary and it does not
+go in `-y`. Queue it:
+
+```
+trellis set api.schema status=done --propose --because "tests green, awaiting review"
+```
+
+It is validated and previewed exactly as a write would be, then parked in
+`history/proposals.jsonl` where the user will find it with `trellis pending`.
+
+**Never `accept` a proposal on the user's behalf.** Queuing exists precisely
+because the decision is theirs; accepting your own proposal is `-y` with extra
+steps, and it launders a guess into a decision the journal will record as
+considered. The same goes for `reject` — turning down a proposal somebody else
+queued is not yours to do either.
+
+If re-proposing something surfaces a prior rejection, **read the reason before
+proposing it again**. It may still be right, and it may be the same mistake.
+Either way the user should hear that it was refused before, from you, rather
+than discovering it in the queue.
+
 ## Corrections
 
 A status moving backwards — `done` to `in_progress`, `agreed` to `draft` — is

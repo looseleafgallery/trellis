@@ -7,7 +7,7 @@ nodes:
     ref: TRE-2
     title: Propose now, decide later
     parent: hitl
-    status: not_started
+    status: in_progress
     gates:
       start: contract.durable_state_home.live
       finish: contract.reconcile_outcome.agreed
