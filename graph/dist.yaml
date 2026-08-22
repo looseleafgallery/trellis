@@ -1,5 +1,6 @@
 nodes:
   - id: dist.release_process
+    acknowledge: [inert_node, unowned_node]
     ref: TRE-6
     title: Decide tagging, releases, and whether PyPI happens
     status: not_started
@@ -9,6 +10,7 @@ nodes:
       the diagnostic - nobody owns distribution yet.
 
   - id: core.concurrency
+    acknowledge: [inert_node, unowned_node]
     ref: TRE-7
     title: Lock the writer against concurrent edits
     status: not_started

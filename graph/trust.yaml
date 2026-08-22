@@ -33,6 +33,7 @@ nodes:
       failure.
 
   - id: trust.honest_output
+    acknowledge: [inert_node]
     ref: "#41"
     title: Audit output for conclusions the tool has not verified
     parent: trust

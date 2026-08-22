@@ -12,6 +12,7 @@ nodes:
       corroborator only challenges, an extractor only proposes.
 
   - id: ecosystem.renderer
+    acknowledge: [inert_node]
     title: Snapshot in, artifact out
     parent: ecosystem
     status: done
@@ -22,6 +23,7 @@ nodes:
       to follow.
 
   - id: ecosystem.corroborator
+    acknowledge: [inert_node]
     ref: "#56"
     title: Check the declaration against a system trellis does not own
     parent: ecosystem
