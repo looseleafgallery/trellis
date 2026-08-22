@@ -11,6 +11,22 @@ expensive to break.
 
 ### Added
 
+- A durable proposal queue. `set`/`log --propose` queue a validated, previewed
+  delta instead of writing it; `pending`, `accept` and `reject` decide it later.
+  Stored in `history/proposals.jsonl`, committed and append-only — a proposal
+  awaiting a decision is a handoff between two parties, so it cannot live
+  somewhere the other party cannot see.
+- Accepting **recomputes** the consequence against the graph as it is now
+  rather than replaying the preview captured at propose time. A node that moved
+  underneath is refused by fingerprint and named; a proposal whose *consequence*
+  changed is re-previewed rather than refused, because a graph moving around a
+  live proposal is normal.
+- Rejections are kept with their reason, and re-proposing the same change says
+  when it was turned down and why. Told, not refused: the same change can be
+  right later.
+- `trust` challenges a proposal left undecided for three weeks. A queue nobody
+  empties is a worse place for a decision than the prose it replaced, because
+  it looks handled.
 - `trust` reports provenance calibration split by `how` — `inferred` and
   `assumed` are guesses of different confidence and an aggregate over them
   answers no question anyone has. Ranked most-wrong first, which is the order

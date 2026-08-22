@@ -10,7 +10,7 @@ import sys
 from datetime import UTC
 from pathlib import Path
 
-from . import corroborate, edit, journal, queries, viz
+from . import corroborate, edit, journal, proposals, queries, viz
 from . import delta as delta_mod
 from . import evidence as evidence_mod
 from . import snapshot as snapshot_mod
@@ -442,25 +442,27 @@ def _confirm(question: str) -> bool:
         return False
 
 
-def _print_delta(graph: Graph, delta: delta_mod.Delta) -> None:
+def _print_delta(graph: Graph, delta: delta_mod.Delta, indent: str = "  ") -> None:
     for spec in delta.new_nodes:
         kind = spec.get("kind", "work")
-        print(f"  + create {spec['id']}  ({kind}, status={spec.get('status')})")
+        print(f"{indent}+ create {spec['id']}  ({kind}, status={spec.get('status')})")
         if spec.get("why"):
-            print(f"      ({spec['why']})")
+            print(f"{indent}    ({spec['why']})")
     for change in delta.changes:
         if change.node in graph:
             before = getattr(graph.get(change.node), change.field, None)
-            print(f"  ~ {change.node}  {change.field}: {before} -> {change.value}")
+            print(
+                f"{indent}~ {change.node}  {change.field}: {before} -> {change.value}"
+            )
         else:
-            print(f"  ~ {change.node}  {change.field} = {change.value}")
+            print(f"{indent}~ {change.node}  {change.field} = {change.value}")
         detail = [d for d in (change.why,) if d]
         if change.confidence < 1.0:
             detail.append(f"confidence {change.confidence:.0%}")
         if detail:
-            print(f"      ({'; '.join(detail)})")
+            print(f"{indent}    ({'; '.join(detail)})")
     for item in delta.unmatched:
-        print(f"  ? unmatched: {item}")
+        print(f"{indent}? unmatched: {item}")
 
 
 def _retreats(graph: Graph, delta) -> list[tuple[str, object, object]]:
@@ -523,6 +525,12 @@ def _run_write(args, graph, cache, graph_dir, delta, origin: str, text: str) -> 
     if retreats:
         print()
 
+    if getattr(args, "propose", False):
+        # Queued after the preview, not instead of it. Whoever proposes should
+        # still see the consequence - it is the person deciding later who is
+        # missing, not the reasoning.
+        return _queue(args, graph, graph_dir, delta, origin, text)
+
     if args.dry_run:
         for node, before, after in retreats:
             print(f"  correction: {node} goes back from {before} to {after}")
@@ -545,6 +553,162 @@ def _run_write(args, graph, cache, graph_dir, delta, origin: str, text: str) -> 
     journal.record(graph_dir, origin, text, writes, delta.unmatched, reason)
     cache.save()
     print(f"\nwrote {len(writes)} change(s) to {len({w.path for w in writes})} file(s)")
+    return 0
+
+
+def _queue(args, graph, graph_dir, delta, origin: str, text: str) -> int:
+    """Park a validated, previewed delta for someone else to decide."""
+    prior = proposals.rejected_before(graph_dir, proposals.content_key(delta))
+    if prior:
+        _proposal, decision = prior
+        # Not a refusal. The same change can be right later, and the point is
+        # that the person deciding gets told rather than having to remember.
+        print(f"note: this exact change was rejected on {decision.at[:10]}")
+        if decision.reason:
+            print(f"      why: {decision.reason}")
+
+    reason = getattr(args, "because", None) or ""
+    proposal = proposals.propose(
+        graph_dir, graph, delta, origin=origin, text=text, why=reason
+    )
+    print(f"\nqueued as {proposal.id} - nothing written")
+    print(
+        f"  decide with `trellis accept {proposal.id}` or `trellis reject {proposal.id}`"
+    )
+    return 0
+
+
+def cmd_pending(args) -> int:
+    """What has been proposed and not yet decided."""
+    graph, _cache, graph_dir = _load(args)
+    queued = proposals.pending(graph_dir)
+    if args.json:
+        _emit(
+            [
+                {
+                    **p.as_dict(),
+                    "age_days": p.age_days(),
+                    "moved": proposals.moved(graph, p),
+                }
+                for p in queued
+            ],
+            True,
+        )
+        return 0
+    if not queued:
+        print("nothing pending")
+        return 0
+
+    print(f"{len(queued)} proposal(s) awaiting a decision:")
+    for proposal in queued:
+        age = proposal.age_days()
+        when = f"{age}d old" if age is not None else "age unknown"
+        origin = f" [{proposal.origin}]" if proposal.origin else ""
+        print(f"\n  {proposal.id}  {when}{origin}")
+        if proposal.text:
+            print(f"      {proposal.text}")
+        if proposal.why:
+            print(f"      why: {proposal.why}")
+        _print_delta(graph, proposal.delta, indent="      ")
+        gone = proposals.moved(graph, proposal)
+        if gone:
+            # Said here rather than only at accept time, so a queue full of
+            # unacceptable proposals is visible without trying each one.
+            print(f"      ! moved since it was proposed: {', '.join(gone)}")
+    return 0
+
+
+def _find_proposal(graph_dir, proposal_id: str):
+    proposal = proposals.get(graph_dir, proposal_id)
+    if proposal is None:
+        print(f"error: no proposal {proposal_id!r}", file=sys.stderr)
+        return None
+    decided = proposals.decisions(graph_dir).get(proposal_id)
+    if decided:
+        print(
+            f"error: {proposal_id} was already {decided.kind} on {decided.at[:10]}",
+            file=sys.stderr,
+        )
+        return None
+    return proposal
+
+
+def cmd_accept(args) -> int:
+    """Apply a queued proposal, recomputing what it does now."""
+    graph, cache, graph_dir = _load(args)
+    proposal = _find_proposal(graph_dir, args.id)
+    if proposal is None:
+        return 2
+
+    gone = proposals.moved(graph, proposal)
+    if gone:
+        # Identity, not consequence. The thing that was proposed against is not
+        # the thing that is there, so applying this would be answering a
+        # question nobody asked.
+        print(
+            f"error: {', '.join(gone)} changed since {proposal.id} was proposed.\n"
+            f"the proposal was made against a different declaration - re-propose "
+            f"it against this one.\nnothing was written",
+            file=sys.stderr,
+        )
+        return 2
+
+    delta = proposal.delta
+    problems = delta_mod.validate(delta, graph)
+    if problems:
+        for problem in problems:
+            print(f"error: {problem}", file=sys.stderr)
+        print("nothing was written", file=sys.stderr)
+        return 2
+
+    print(f"{proposal.id}, proposed {proposal.at[:10]}:")
+    _print_delta(graph, delta)
+    print()
+    # Recomputed now, not replayed from propose time. A preview captured then
+    # is the CI badge that was true when it ran.
+    result = queries.impact(graph, delta.overlay(), cache, delta.new_nodes)
+    _print_impact(graph, result, args.verbose, evidence_mod.gather(graph_dir, graph))
+
+    if args.dry_run:
+        print("\ndry run - nothing written")
+        return 0
+    if not args.yes and not _confirm("\napply?"):
+        print("not applied")
+        return 1
+
+    try:
+        writes = edit.apply_delta(graph_dir, graph, delta)
+    except edit.EditError as exc:
+        print(f"error: {exc}\nnothing was written", file=sys.stderr)
+        return 2
+    reason = args.because or proposal.why
+    journal.record(
+        graph_dir, f"accept:{proposal.id}", proposal.text or "", writes, [], reason
+    )
+    proposals.decide(graph_dir, proposal.id, "accepted", args.because or "")
+    cache.save()
+    print(f"\nwrote {len(writes)} change(s) to {len({w.path for w in writes})} file(s)")
+    return 0
+
+
+def cmd_reject(args) -> int:
+    """Turn a proposal down, keeping why."""
+    _graph, _cache, graph_dir = _load(args)
+    proposal = _find_proposal(graph_dir, args.id)
+    if proposal is None:
+        return 2
+    reason = args.because or ""
+    if not reason:
+        # The reason is the whole value of a kept rejection: without it the
+        # same proposal comes back and nothing can say what was wrong with it.
+        print(
+            "error: --because is required to reject - the reason is the point",
+            file=sys.stderr,
+        )
+        return 2
+    proposals.decide(graph_dir, proposal.id, "rejected", reason)
+    print(f"rejected {proposal.id}")
+    print(f"  why: {reason}")
     return 0
 
 
@@ -706,6 +870,7 @@ def cmd_trust(args) -> int:
                 "stale_verifications": [c.as_dict() for c in aged],
                 "edge_coverage": {"annotated": annotated, "total": total_edges},
                 "calibration": _calibration(graph_dir),
+                "stale_proposals": [p.id for p in proposals.stale(graph_dir)],
                 "corrections": corrected,
             },
             True,
@@ -772,6 +937,16 @@ def cmd_trust(args) -> int:
                 f"{claim.how} {claim.at} ({claim.age_days}d ago)"
             )
 
+    waiting = proposals.stale(graph_dir)
+    if waiting:
+        print(
+            f"\nproposals nobody has decided in "
+            f"{proposals.STALE_AFTER_DAYS}+ days - a queue that is not emptied is "
+            f"worse than the prose it replaced, because it looks handled:"
+        )
+        for item in waiting:
+            print(f"  ? {item.id:<6} {item.age_days()}d  {item.text or item.origin}")
+
     if not journal.has_journal(graph_dir):
         # Without it, `trust` falls back to file-level git history and `drift`
         # has no baseline at all. Saying so beats quietly answering a weaker
@@ -795,7 +970,7 @@ def cmd_trust(args) -> int:
             )
         _report_calibration(graph_dir)
 
-    anything = stale or churn or unknown or unconfirmed or aged or corrected
+    anything = stale or churn or unknown or unconfirmed or aged or corrected or waiting
     if not anything:
         print("nothing to challenge - every declaration has history and none is stale")
     else:
@@ -1719,6 +1894,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="REASON",
         help="why - recorded in the journal. Asked for automatically on a correction",
     )
+    p.add_argument(
+        "--propose",
+        action="store_true",
+        help="queue it for someone to decide later instead of writing now",
+    )
     p.set_defaults(func=cmd_set)
 
     p = sub.add_parser("log", help="describe what happened; a model proposes the delta")
@@ -1729,11 +1909,36 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-n", "--dry-run", action="store_true")
     p.add_argument("-v", "--verbose", action="store_true")
     p.add_argument("--because", metavar="REASON", help="why - recorded in the journal")
+    p.add_argument(
+        "--propose",
+        action="store_true",
+        help="queue it for someone to decide later instead of writing now",
+    )
     p.set_defaults(func=cmd_log)
 
     p = sub.add_parser("history", help="what has been applied, and why")
     p.add_argument("-n", "--limit", type=int, default=20)
     p.set_defaults(func=cmd_history)
+
+    p = sub.add_parser("pending", help="proposals nobody has decided yet")
+    p.set_defaults(func=cmd_pending)
+
+    p = sub.add_parser("accept", help="apply a queued proposal, recomputed now")
+    p.add_argument("id", help="the proposal handle, e.g. p3")
+    p.add_argument("-y", "--yes", action="store_true", help="skip the confirmation")
+    p.add_argument("-n", "--dry-run", action="store_true")
+    p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("--because", metavar="REASON", help="why - recorded in the journal")
+    p.set_defaults(func=cmd_accept)
+
+    p = sub.add_parser("reject", help="turn a proposal down, keeping why")
+    p.add_argument("id", help="the proposal handle, e.g. p4")
+    p.add_argument(
+        "--because",
+        metavar="REASON",
+        help="why - required; it is what stops it arriving again next month",
+    )
+    p.set_defaults(func=cmd_reject)
 
     p = sub.add_parser(
         "trust", help="challenge the declaration: what is stale, what churns"
