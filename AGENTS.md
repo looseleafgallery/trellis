@@ -1,8 +1,13 @@
 # Working with trellis
 
 You are reading this because someone wants you to build or maintain a trellis
-graph for them. This is the operating manual for doing that. Read `README.md`
-for what the tool is; this file is about how to use it *with* a person.
+graph for them. This is the operating manual for doing that.
+
+The division is deliberate: **instructions live here, properties live in
+`README.md`.** If it says *you should do X*, it is in this file. If it says *the
+tool guarantees Y* — the model only proposes, evidence never sets, errors cannot
+be acknowledged away — it is in the README, because that is what a person reads
+to decide whether to trust the thing.
 
 ## The one rule
 
