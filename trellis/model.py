@@ -106,13 +106,33 @@ class EdgeEvidence:
     # ISO date the claim was checked. A verification has a shelf life: the fact
     # it was checked against can move afterwards without anything noticing.
     at: str | None = None
+    # Which extractor or corroborator believed this. Opaque, like `ref` — a
+    # name the ecosystem agrees on, never parsed or fetched by the kernel.
+    #
+    # Absent means a person, directly, which is what every edge written before
+    # this field existed meant. It matters because calibration is only useful
+    # per source: "the code scanner's inferred edges were wrong 4 of 9 times"
+    # tells you which annotations to trust, where an aggregate only tells you
+    # that some are wrong. And it cannot be recovered later — an edge written
+    # without a source was never attributable.
+    by: str | None = None
 
     @property
     def confirmed(self) -> bool:
         return self.how in ("verified", "stated")
 
+    @property
+    def source(self) -> str:
+        """Who believed it. Unattributed edges are grouped, not guessed at."""
+        return self.by or "unattributed"
+
     def as_dict(self) -> dict:
-        return {"target": self.target, "how": self.how, "at": self.at}
+        return {
+            "target": self.target,
+            "how": self.how,
+            "at": self.at,
+            "by": self.by,
+        }
 
 
 @dataclass(frozen=True)
@@ -350,7 +370,10 @@ def node_from_dict(data: dict, source: str = "") -> Node:
         at = spec.get("at")
         if at is not None:
             at = str(at)
-        edge_evidence.append(EdgeEvidence(target=str(target), how=how, at=at))
+        by = spec.get("by")
+        if by is not None:
+            by = str(by).strip() or None
+        edge_evidence.append(EdgeEvidence(target=str(target), how=how, at=at, by=by))
     edge_evidence_t = tuple(sorted(edge_evidence, key=lambda e: e.target))
 
     raw_ack = data.get("acknowledge") or []
@@ -558,7 +581,8 @@ class Graph:
                 "satisfied_by": list(base.satisfied_by),
                 "publishes": base.publishes_map,
                 "evidence": {
-                    e.target: {"how": e.how, "at": e.at} for e in base.evidence
+                    e.target: {"how": e.how, "at": e.at, "by": e.by}
+                    for e in base.evidence
                 },
                 "acknowledge": list(base.acknowledge),
                 "awaiting": base.awaiting,

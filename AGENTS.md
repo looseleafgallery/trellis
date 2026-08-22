@@ -163,6 +163,12 @@ evidence:
 `how` is one of `verified` (checked against a system of record), `stated`
 (someone told you), `inferred` (you worked it out), `assumed` (nobody said it).
 
+`by` names what believed it — an extractor, a corroborator, a tool. Omit it
+when the answer is "a person, directly", which is what an absent `by` means.
+**If you are an automated extractor writing edges, set it**: calibration is
+only actionable per source, and an edge written without one can never be
+attributed afterwards.
+
 **Evidence keys are node ids, even when the gate names a published fact.** The
 gate below references `tools.streaming_results`; the evidence annotates `tools`,
 the node that publishes it:

@@ -11,6 +11,11 @@ expensive to break.
 
 ### Added
 
+- `evidence:` accepts `by:`, naming what believed an edge — an extractor, a
+  corroborator, a tool. `reconcile` records it on the outcome so it survives
+  the edge being deleted, and reports calibration per source once more than one
+  thing has annotated anything. Absent means a person, directly.
+
 - `trellis reconcile` walks believed edges and records whether each held, with
   the reason. Kept in the journal so it survives the edge being deleted — which
   is what happens to an edge that turned out to be wrong. `trust` then reports
