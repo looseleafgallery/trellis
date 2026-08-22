@@ -556,9 +556,14 @@ Snapshot JSON on stdin, findings on stdout, merged into `doctor`. It joins on
 
 ```python
 out = [
-    {"node": n, "code": "state_disagrees", "severity": "warn",
-     "message": f"{r} is Done in the tracker"}
-    for n, r in snapshot["refs"].items() if done_in_tracker(r)
+    {
+        "node": n,
+        "code": "state_disagrees",
+        "severity": "warn",
+        "message": f"{r} is Done in the tracker",
+    }
+    for n, r in snapshot["refs"].items()
+    if done_in_tracker(r)
 ]
 ```
 
