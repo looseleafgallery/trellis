@@ -65,6 +65,44 @@ and that is a judgement.
 
 Same rule as everything else in the trust layer: **challenge, never set.**
 
+## Research and execution are separate tracks
+
+Exploring the graph counterfactually — *what if this edge were wrong, what if
+this were not done yet* — is a first-class use of trellis, as heavily used as
+recording what is actually true. See TRE-9.
+
+**It does not change the requirements of the write loop.** The two are related
+in concept and separate in intent, and the constraint runs one way:
+
+> Research may not loosen execution. If exploration wants something the write
+> path forbids, the answer is a separate read-only surface — never an exemption
+> in the write path.
+
+The concrete case, because it will come up. `Delta.EDITABLE_FIELDS` is scalars
+only: rewriting a `gates:` block is YAML surgery, not a state update.
+`Graph.with_overlay` has no such limit and already re-derives correctly from a
+hypothetical gate, so *what if this dependency were not real* is answerable
+today. The tempting shortcut is to add `gates` to `EDITABLE_FIELDS` so one code
+path serves both. That trade is the wrong way round: it buys a convenient
+research surface by weakening the loop that protects every recorded fact.
+
+The write restriction and the what-if restriction are **different restrictions
+that happen to share a type today.** Splitting them is the work; merging them
+is the bug.
+
+Two properties fall out, and both are non-negotiable:
+
+- **a counterfactual never writes.** Not "should not" — cannot. It is a
+  different surface, not a flag on `set`.
+- **an unapplyable state must be labelled unapplyable.** The trust story rests
+  on the preview being the same object that gets applied. Exploration that
+  reaches states no write could produce is useful and must never be mistakable
+  for a preview.
+
+Nothing here loosens the kernel's own rules either: exploration is still pure,
+still time-free, still exact. A research surface that needed the network or the
+clock would not be a research surface, it would be a corroborator.
+
 ## Provenance carries a source, not just a confidence
 
 `how` says an edge was `inferred`. It does not say by whom. Once several
