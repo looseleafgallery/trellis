@@ -4,6 +4,7 @@ nodes:
     status: in_progress
     publishes:
       history_is_shared: contract.durable_state_home.live
+      scoring_is_reported: trust.calibration.done
     notes: >
       The retrospective's first read: be the thing that catches you, not the
       thing that replaces you. This is where the roadmap is deliberately
@@ -46,7 +47,7 @@ nodes:
     ref: TRE-1
     title: Report how often unconfirmed edges were wrong
     parent: trust
-    status: not_started
+    status: in_progress
     gates:
       start: contract.reconcile_outcome.live
     evidence:

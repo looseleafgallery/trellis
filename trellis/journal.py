@@ -238,6 +238,42 @@ def calibration(graph_dir: str | Path) -> tuple[int, int]:
     return len(all_outcomes), sum(1 for o in all_outcomes if not o.held)
 
 
+def calibration_by_how(graph_dir: str | Path) -> dict[str, tuple[int, int]]:
+    """(checked, wrong) per provenance value.
+
+    The split that changes what you do next. `inferred` and `assumed` are
+    guesses of different confidence and `stated` is a person's word; an
+    aggregate over all three answers no question anyone has. Knowing that
+    `inferred` was wrong 2 of 5 times and `stated` 0 of 12 tells you which
+    annotations to spend a reconciliation pass on.
+
+    Ordered by how much each is worth checking - most wrong first, then most
+    checked - because that is the order a person would work through them.
+    """
+    out: dict[str, list[int]] = {}
+    for item in outcomes(graph_dir):
+        tally = out.setdefault(item.how or "unannotated", [0, 0])
+        tally[0] += 1
+        if not item.held:
+            tally[1] += 1
+    ranked = sorted(out.items(), key=lambda kv: (-kv[1][1], -kv[1][0], kv[0]))
+    return {k: (v[0], v[1]) for k, v in ranked}
+
+
+def last_checked(graph_dir: str | Path) -> str:
+    """When the most recent reconciliation pass ran, or "" if none has.
+
+    Calibration is reported across all time rather than a recent window, and
+    this is what makes that honest. Windowing would shrink a denominator that
+    is already small - the failure the counts-never-rates rule exists to
+    prevent - so the age of the evidence is stated instead of being used to
+    discard it. A year-old pass and a yesterday pass produce the same counts;
+    only this tells them apart.
+    """
+    recorded = outcomes(graph_dir)
+    return recorded[-1].at if recorded else ""
+
+
 @dataclass
 class Correction:
     """A declaration that walked backwards: a belief revised, not progress."""

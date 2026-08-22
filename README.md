@@ -457,9 +457,37 @@ checked 12 before; 2 turned out wrong.
 The outcome is **not recoverable afterwards**: a confirmed edge becomes
 `verified` in the YAML, a wrong one gets rewritten or deleted, and the wrong
 case usually deletes the evidence of its own failure. So it is recorded in the
-journal, where it survives the edge. `trust` then reports counts, never a rate —
-two of seven is honest; 29% invites being read as a property of the world
-rather than of one graph on one day.
+journal, where it survives the edge. `trust` then reports what the annotations
+turned out to be worth, split by the two questions you can act on — which
+*kind* of annotation was wrong, and *whose*:
+
+```
+edge provenance: 27/36 edges annotated
+  checked so far: 2 of 7 were wrong
+    inferred               2 of 3 wrong
+    verified               0 of 2 wrong
+    stated                 0 of 1 wrong
+  by source:
+    code-scanner           2 of 3 wrong
+    linear                 0 of 2 wrong
+  last checked 2026-08-14 (8d ago)
+```
+
+**Counts, never a rate.** Two of seven is honest; 29% invites being read as a
+property of the world rather than of one graph on one day. That holds in the
+JSON too, where a consumer could divide the numbers itself — handing over a
+rate would be the tool drawing the one conclusion the rest of its output
+refuses to draw.
+
+The counts are **all time, not a recent window.** Windowing would shrink a
+denominator that is already small, which is the failure the counts-never-rates
+rule exists to prevent. So the age of the evidence is stated rather than used
+to discard it: a pass from a year ago and one from yesterday produce identical
+counts, and `last checked` is what tells them apart.
+
+This is also the number that makes an extractor safe to install. Something that
+proposes edges from code earns its place by being scored, not by being
+plausible, and `by source` is the score.
 
 ### Why trust is a separate layer
 

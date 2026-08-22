@@ -286,3 +286,100 @@ def test_the_split_is_only_shown_when_it_says_something(tmp_path, answers, capsy
     answers("w", "", "q")
     cli.main(["--graph", str(graph_dir), "reconcile"])
     assert "by source:" not in capsys.readouterr().out
+
+
+def test_calibration_splits_by_how(tmp_path):
+    """`inferred` and `stated` are guesses of different confidence.
+
+    An aggregate over both answers no question anyone has: it cannot tell you
+    which annotations are worth a reconciliation pass.
+    """
+    from trellis.journal import Outcome, calibration_by_how, record_outcome
+
+    record_outcome(
+        tmp_path / "graph",
+        [
+            Outcome("c", "a", "inferred", False),
+            Outcome("c", "b", "inferred", False),
+            Outcome("c", "d", "inferred", True),
+            Outcome("c", "e", "stated", True),
+            Outcome("c", "f", "verified", True),
+        ],
+    )
+    by_how = calibration_by_how(tmp_path / "graph")
+    assert by_how == {"inferred": (3, 2), "stated": (1, 0), "verified": (1, 0)}
+    # most wrong first: the order someone would work through them
+    assert next(iter(by_how)) == "inferred"
+
+
+def test_calibration_is_reported_even_when_nothing_is_unconfirmed(tmp_path, capsys):
+    """The case that used to print nothing was the one worth seeing.
+
+    A graph whose edges have all been confirmed is where the measured hit rate
+    is most reassuring, and it was reachable only by having something still
+    unchecked.
+    """
+    from trellis.journal import Outcome, record_outcome
+
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: a\n"
+        "    title: A\n"
+        "    status: done\n"
+        "  - id: c\n"
+        "    title: C\n"
+        "    status: not_started\n"
+        "    gates: {start: a.done}\n"
+        "    evidence:\n"
+        "      a: {how: verified, at: '2026-01-01'}\n"
+    )
+    record_outcome(
+        graph_dir,
+        [Outcome("c", "a", "inferred", False), Outcome("c", "a", "verified", True)],
+    )
+    assert cli.main(["--graph", str(graph_dir), "trust"]) == 0
+    out = capsys.readouterr().out
+    assert "unconfirmed edges" not in out
+    assert "checked so far: 1 of 2 were wrong" in out
+
+
+def test_calibration_never_reports_a_rate(tmp_path, capsys):
+    """Counts at every level, including the json a consumer could divide itself.
+
+    Handing over a rate would be the tool drawing the one conclusion the rest
+    of its output refuses to draw.
+    """
+    from trellis.journal import Outcome, record_outcome
+
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: a\n"
+        "    title: A\n"
+        "    status: done\n"
+        "  - id: c\n"
+        "    title: C\n"
+        "    status: not_started\n"
+        "    gates: {start: a.done}\n"
+        "    evidence: {a: inferred}\n"
+    )
+    record_outcome(graph_dir, [Outcome("c", "a", "inferred", False)])
+    assert cli.main(["--graph", str(graph_dir), "--json", "trust"]) == 0
+    import json as jsonlib
+
+    payload = jsonlib.loads(capsys.readouterr().out)["calibration"]
+    assert payload["checked"] == 1 and payload["wrong"] == 1
+    assert payload["by_how"] == {"inferred": {"checked": 1, "wrong": 1}}
+    assert payload["last_checked"]
+    assert not any("rate" in k or "percent" in k for k in payload)
+
+
+def test_last_checked_is_empty_until_something_is(tmp_path):
+    from trellis.journal import Outcome, last_checked, record_outcome
+
+    assert last_checked(tmp_path / "graph") == ""
+    record_outcome(tmp_path / "graph", [Outcome("c", "a", "inferred", True)])
+    assert last_checked(tmp_path / "graph").startswith("20")
