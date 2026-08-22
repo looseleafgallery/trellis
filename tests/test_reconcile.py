@@ -383,3 +383,93 @@ def test_last_checked_is_empty_until_something_is(tmp_path):
     assert last_checked(tmp_path / "graph") == ""
     record_outcome(tmp_path / "graph", [Outcome("c", "a", "inferred", True)])
     assert last_checked(tmp_path / "graph").startswith("20")
+
+
+GRAPH_TWO_GUESSES = """nodes:
+  - id: a
+    title: A
+    status: done
+  - id: b
+    title: B
+    status: done
+  - id: c
+    title: C
+    status: not_started
+    gates: {start: a.done}
+    evidence: {a: inferred}
+  - id: d
+    title: D
+    status: not_started
+    gates: {start: b.done}
+    evidence: {b: inferred}
+"""
+
+
+def test_ctrl_c_is_a_stop_not_a_crash(tmp_path, capsys, monkeypatch):
+    """A traceback is the tool failing to be the thing that catches you."""
+    from trellis import cli
+
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(GRAPH_TWO_GUESSES)
+
+    def boom(*_a, **_k):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "cmd_check", boom)
+    assert cli.main(["--graph", str(graph_dir), "check"]) == 130
+    assert "stopped" in capsys.readouterr().err
+
+
+def test_an_interrupted_reconcile_keeps_what_was_answered(
+    tmp_path, capsys, monkeypatch
+):
+    """`q` used to keep every answer while Ctrl-C threw them all away.
+
+    These are judgements a person cannot reproduce, so they are written when
+    they are made rather than when the loop happens to finish.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(GRAPH_TWO_GUESSES)
+
+    # answer the first edge, then interrupt partway through the second
+    queue = ["h", "it holds"]
+
+    def scripted(_prompt=""):
+        if queue:
+            return queue.pop(0)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("builtins.input", scripted)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+    assert cli.main(["--graph", str(graph_dir), "reconcile"]) == 130
+
+    kept = journal.outcomes(graph_dir)
+    assert len(kept) == 1
+    assert kept[0].held is True
+    assert kept[0].reason == "it holds"
+
+
+def test_each_outcome_names_itself_in_history(tmp_path):
+    """`checked 1 edge(s), 0 wrong` says less than naming the edge."""
+    from trellis.journal import Outcome, read, record_outcome
+
+    record_outcome(tmp_path / "graph", [Outcome("c", "a", "inferred", False)])
+    assert read(tmp_path / "graph")[0]["text"] == "checked c -> a: wrong"
+
+
+def test_the_menu_says_what_each_answer_does(tmp_path, capsys, monkeypatch):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(GRAPH_TWO_GUESSES)
+
+    monkeypatch.setattr("builtins.input", lambda _p="": "q")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    cli.main(["--graph", str(graph_dir), "reconcile"])
+
+    out = capsys.readouterr().out
+    assert "this edge is real" in out
+    assert "will be back next run" in out
+    assert "everything answered so far is kept" in out
