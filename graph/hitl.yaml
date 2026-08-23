@@ -10,10 +10,21 @@ nodes:
     status: in_progress
     gates:
       start: contract.durable_state_home.live
-      finish: contract.reconcile_outcome.agreed
+      finish: contract.reconcile_outcome.agreed and contract.decision_surface.agreed
     evidence:
       contract.durable_state_home: stated
       contract.reconcile_outcome: inferred
     notes: >
       Startable once state has a home; not finishable until accept and
       reject record their outcome the same way calibration does.
+
+  - id: hitl.decision_context
+    title: Every answer states what it will do
+    parent: hitl
+    status: done_unverified
+    notes: >
+      Implements contract.decision_surface. Two halves: show what the graph
+      already knows about the thing being decided, and annotate each option
+      with the side effect taking it produces - what it writes, whether it is
+      permanent, and who else sees it.
+

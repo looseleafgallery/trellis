@@ -1506,7 +1506,7 @@ def test_a_key_is_explained_the_first_time_it_appears(split, answers, capsys):
     cli.main(["--graph", str(split), "review"])
     out = capsys.readouterr().out
     # explained once, then compacted - not explained under every finding
-    assert out.count("answer it for good") == 1
+    assert out.count("answer it for good; asks why") == 1
     assert "? for help" in out
 
 
@@ -1514,7 +1514,7 @@ def test_the_full_menu_comes_back_on_request(split, answers, capsys):
     answers("?", "q")
     cli.main(["--graph", str(split), "review"])
     out = capsys.readouterr().out
-    assert out.count("leave it; it will be back next run") == 2
+    assert out.count("writes nothing; it returns next run") == 2
 
 
 def test_review_shows_the_node_before_asking_about_it(tmp_path, answers, capsys):
@@ -1566,3 +1566,69 @@ def test_a_long_note_cannot_bury_the_findings(tmp_path, answers, capsys):
     assert "more lines, in the file" in out
     note_block = [line for line in out.splitlines() if "context" in line]
     assert len(note_block) == 5, "capped at five wrapped lines"
+
+
+def test_every_option_states_what_it_does_to_the_graph(split, answers, capsys):
+    """A verb is not a consequence.
+
+    `acknowledge` reads like dismissing a notice and is in fact a permanent
+    ruling written into the YAML that everyone who clones the repo sees. That
+    difference decided five findings on one real graph, in the wrong direction.
+    """
+    answers("q")
+    cli.main(["--graph", str(split), "review"])
+    out = capsys.readouterr().out
+
+    # the consequence, at the moment of choosing
+    assert "permanent" in out
+    assert "everyone who clones this sees it" in out
+    assert "g.yaml" in out, "names the file the write lands in"
+    # and which options touch disk at all
+    assert "* changes something on disk" in out
+    assert "* [a] acknowledge" in out
+    assert "  [s] skip" in out and "* [s] skip" not in out
+
+
+def test_a_bare_writes_nothing_does_not_earn_a_line(split, answers, capsys):
+    """The marker column already says it; repeating it is the noise the
+    grouped review just removed."""
+    answers("q")
+    cli.main(["--graph", str(split), "review"])
+    out = capsys.readouterr().out
+    # `explain` writes nothing and says only that, so it stays on one line
+    explain = [ln for ln in out.splitlines() if "[x] explain" in ln]
+    assert explain and "writes nothing" not in explain[0]
+    # `skip` says more than that, so it keeps its second line
+    assert "writes nothing; it returns next run" in out
+
+
+def test_check_says_why_each_finding_was_acknowledged(tmp_path, answers, capsys):
+    """The reason is captured when it is cheap and was never read back."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n  - id: solo\n    title: Solo\n    status: not_started\n"
+    )
+    answers("a", "genuinely standalone", "q")
+    cli.main(["--graph", str(graph_dir), "review"])
+    capsys.readouterr()
+
+    cli.main(["--graph", str(graph_dir), "check"])
+    out = capsys.readouterr().out
+    assert "acknowledged" in out
+    assert "why: genuinely standalone" in out
+
+
+def test_an_acknowledgement_with_no_reason_says_so(tmp_path, capsys):
+    """Silence and 'no reason given' are different, and only one is honest."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: solo\n"
+        "    title: Solo\n"
+        "    status: not_started\n"
+        "    acknowledge: [inert_node]\n"
+    )
+    cli.main(["--graph", str(graph_dir), "check"])
+    assert "no reason recorded" in capsys.readouterr().out

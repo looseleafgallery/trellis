@@ -10,6 +10,7 @@ import sys
 import textwrap
 from datetime import UTC
 from pathlib import Path
+from typing import NamedTuple
 
 from . import corroborate, edit, journal, proposals, queries, viz
 from . import delta as delta_mod
@@ -110,6 +111,7 @@ def cmd_check(args) -> int:
         if not problems:
             tail = f" ({muted} acknowledged)" if muted else ""
             print(f"ok - {len(graph)} nodes, no problems{tail}")
+            _print_acknowledged(graph, graph_dir)
         else:
             # Already ranked by check(): worst first, then most urgent.
             for p in problems:
@@ -118,6 +120,7 @@ def cmd_check(args) -> int:
             print(f"\n{len(problems)} problem(s), {errors} error(s)")
             if muted:
                 print(f"{muted} acknowledged and not shown")
+                _print_acknowledged(graph, graph_dir)
             first = problems[0]
             print(f"\nstart with: {first.node} - {first.code}")
             remedy = REMEDIES.get(first.code)
@@ -1258,47 +1261,105 @@ def _open_editor(path, line: int) -> bool:
     return True
 
 
-def _choices(graph, problem, siblings: int) -> list[tuple[str, str, str]]:
-    """The options for one finding, each with what taking it does."""
+class Choice(NamedTuple):
+    """One answer a person can give, and what taking it costs.
+
+    `effect` is the half that was missing: what lands on disk, whether it can
+    be taken back, and who else ends up seeing it.
+    """
+
+    key: str
+    label: str
+    does: str
+    effect: str
+
+
+def _choices(graph, problem, siblings: int, where: str = "") -> list[Choice]:
+    """The options for one finding, each with what taking it *does to the graph*.
+
+    A verb is not a consequence. `acknowledge` reads like dismissing a notice
+    and is in fact a permanent ruling written into the YAML that everyone who
+    clones the repo will see - and that difference decided five findings on one
+    real graph, in the wrong direction. So every option states its side effect
+    at the moment of choosing, not in documentation someone reads afterwards.
+    """
+    target = f" in {where}" if where else ""
     out = []
     fix = DIRECT_FIX.get(problem.code)
     if fix and problem.node in graph:
-        out.append(("f", "fix", f"{fix[2]}; previewed and confirmed as usual"))
+        out.append(
+            Choice(
+                "f", "fix", f"{fix[2]}", f"rewrites the node{target}; you confirm first"
+            )
+        )
     if problem.severity != "error":
         out.append(
-            ("a", "acknowledge", "answer it for good; asks why, and stays counted")
+            Choice(
+                "a",
+                "acknowledge",
+                "answer it for good; asks why",
+                f"writes acknowledge: [{problem.code}]{target} - permanent, "
+                f"and everyone who clones this sees it",
+            )
         )
         if siblings:
             # "this node is fine, stop asking" is what a person means when a
             # node raises several of these. Answering it once per finding is
             # the same decision typed twice.
             out.append(
-                (
+                Choice(
                     "A",
                     "ack all",
-                    f"acknowledge this and the other {siblings} on this node",
+                    f"the same, for all {siblings + 1} findings here",
+                    f"writes {siblings + 1} acknowledgements{target} with one reason",
                 )
             )
     out += [
-        ("x", "explain", "show the reasoning; does not consume the finding"),
-        (
+        Choice("x", "explain", "show the reasoning", "writes nothing"),
+        Choice(
             "e",
             "edit",
             f"open {_editor()} at this node's line"
             if _editor()
             else "no $EDITOR set - prints the file and line instead",
+            "you edit the file directly; the graph is re-read after"
+            if _editor()
+            else "writes nothing",
         ),
-        ("s", "skip", "leave it; it will be back next run"),
-        ("q", "quit", "stop here; everything answered so far is kept"),
+        Choice("s", "skip", "leave it for now", "writes nothing; it returns next run"),
+        Choice(
+            "q",
+            "quit",
+            "stop here",
+            "writes nothing; everything answered so far is kept",
+        ),
     ]
     return out
 
 
-def _full_menu(choices) -> str:
-    width = max(len(label) for _key, label, _help in choices)
-    return "\n".join(
-        f"  [{key}] {label.ljust(width)}  {detail}" for key, label, detail in choices
-    )
+def _full_menu(choices: list[Choice]) -> str:
+    """Each option on one line, its consequence indented under it.
+
+    The consequence is the point, so it gets its own line rather than a
+    parenthetical - but only one, because six options spending three lines
+    each is the noise the grouped review just removed.
+    """
+    width = max(len(c.label) for c in choices)
+    indent = " " * (width + 11)
+    lines = []
+    for choice in choices:
+        writes = not choice.effect.startswith("writes nothing")
+        mark = "*" if writes else " "
+        lines.append(
+            f"  {mark} [{choice.key}] {choice.label.ljust(width)}  {choice.does}"
+        )
+        # A bare "writes nothing" repeats what the marker column already says.
+        # The line is worth its space only when the consequence goes further.
+        if choice.effect != "writes nothing":
+            for line in textwrap.wrap(choice.effect, width=76 - len(indent)):
+                lines.append(f"{indent}{line}")
+    lines.append("    * changes something on disk")
+    return "\n".join(lines)
 
 
 def _review_one(
@@ -1325,19 +1386,24 @@ def _review_one(
     # good, skipping defers it to the next run. Shown in full once, then
     # compacted - the descriptions are what make it learnable, and repeating
     # them under every finding is what makes them noise.
-    choices = _choices(graph, problem, siblings)
-    keys = "/".join(key for key, _label, _detail in choices)
+    try:
+        path, _line = edit.node_line(graph_dir, graph, problem.node)
+        where = Path(path).name
+    except edit.EditError:
+        where = ""
+    choices = _choices(graph, problem, siblings, where)
+    keys = "/".join(c.key for c in choices)
 
     # Compacting after the first finding hides any key that was not on offer
     # then - `a` never appears on an error, so a run starting with one would
     # show `[a/x/e/s/q]` having never said what `a` does. Full menu whenever it
     # carries a key nobody has seen explained yet.
     seen = explained if explained is not None else set()
-    novel = {key for key, _label, _detail in choices} - seen
+    novel = {c.key for c in choices} - seen
 
     while True:
         print(f"\n{_full_menu(choices)}" if novel else f"\n  [{keys}]  ? for help")
-        seen.update(key for key, _label, _detail in choices)
+        seen.update(c.key for c in choices)
         novel = set()
         try:
             answer = input("> ").strip()
@@ -1405,6 +1471,30 @@ def _review_one(
         print("  not one of the options")
 
 
+def _print_acknowledged(graph, graph_dir) -> None:
+    """Which findings were answered for good, and why.
+
+    An acknowledgement you cannot see is indistinguishable from a bug, which
+    is why they are counted. A count you cannot explain is barely better - the
+    reason is what tells a reader whether the ruling still holds.
+    """
+    reasons = journal.acknowledgements(graph_dir)
+    rows = [
+        (node.id, code, reasons.get((node.id, code), ("", "")))
+        for node in graph.nodes.values()
+        for code in node.acknowledge
+    ]
+    if not rows:
+        return
+    width = max(len(node_id) for node_id, _code, _r in rows)
+    for node_id, code, (at, why) in sorted(rows):
+        stamp = f"  {at[:10]}" if at else ""
+        print(f"  . {node_id.ljust(width)}  {code}{stamp}")
+        # The reason is the whole value of the record; without it the entry
+        # says only that somebody once decided something.
+        print(f"    {' ' * width}  {f'why: {why}' if why else 'no reason recorded'}")
+
+
 def _print_node_context(graph, engine, graph_dir, node_id: str) -> None:
     """What the node is, before asking someone to rule on it.
 
@@ -1435,7 +1525,8 @@ def _print_node_context(graph, engine, graph_dir, node_id: str) -> None:
     facts.append(
         "nothing depends on it"
         if not dependents
-        else f"{_count(len(dependents), 'node')} depend on it"
+        else f"{_count(len(dependents), 'node')} "
+        + ("depends on it" if len(dependents) == 1 else "depend on it")
     )
     try:
         path, line = edit.node_line(graph_dir, graph, node_id)

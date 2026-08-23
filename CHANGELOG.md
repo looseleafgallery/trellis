@@ -11,6 +11,22 @@ expensive to break.
 
 ### Added
 
+- Every answer in `review` states its **side effect** at the moment of
+  choosing, not in documentation read afterwards: what it writes, which file
+  it lands in, whether it is permanent, and who else ends up seeing it. A
+  marker column separates the options that touch disk from the ones that do
+  not. `acknowledge` reads like dismissing a notice and is in fact a permanent
+  ruling everyone who clones the repo sees - that difference decided five
+  findings on one real graph, in the wrong direction.
+- `check` reports **why** each finding was acknowledged, not just how many.
+  The reason is captured at the one moment it is cheap and was previously
+  never read back, which made the most informative field in the graph the
+  least visible one. An acknowledgement made without a reason says so rather
+  than showing a blank.
+- `AGENTS.md` gains *Where trellis belongs in your own work* - read the graph
+  before asking the user what is open, model structural work before proposing
+  it, run `impact` before claiming a change unblocks something, and go through
+  `set` so the reason survives.
 - `review` shows the node before asking you to rule on it: title, declared
   status and derived readiness, `ref:`, how many nodes depend on it, where it
   is declared, and the `notes:` the modeller wrote. All of it was already in

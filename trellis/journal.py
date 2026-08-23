@@ -284,6 +284,34 @@ def last_checked(graph_dir: str | Path) -> str:
     return recorded[-1].at if recorded else ""
 
 
+def acknowledgements(graph_dir: str | Path) -> dict[tuple[str, str], tuple[str, str]]:
+    """(node, code) -> (when, why), for every acknowledgement on record.
+
+    The reason is written at the one moment it is cheap - the moment of
+    deciding - and until now nothing ever read it back. `check` counted
+    acknowledgements and never said why any of them was made, which makes the
+    most informative field in the graph the least visible one.
+
+    Derived from the write itself rather than the entry text: the codes added
+    are `after` minus `before`, which cannot drift the way a parsed sentence
+    can.
+    """
+    out: dict[tuple[str, str], tuple[str, str]] = {}
+    for entry in read(graph_dir):
+        if entry.get("origin") != "acknowledge":
+            continue
+        for write in entry.get("writes") or []:
+            if write.get("field") != "acknowledge":
+                continue
+            before = set(write.get("before") or [])
+            for code in set(write.get("after") or []) - before:
+                out[(write["node"], code)] = (
+                    entry.get("at", ""),
+                    entry.get("reason") or "",
+                )
+    return out
+
+
 @dataclass
 class Correction:
     """A declaration that walked backwards: a belief revised, not progress."""
