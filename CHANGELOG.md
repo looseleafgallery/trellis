@@ -275,7 +275,9 @@ expensive to break.
   alone. The stamp is second-precision, so two snapshots differing only in
   `refs` shared a directory and the second overwrote the first - the one thing
   the module promises never to do. `state_hash` is unchanged in both the
-  payload and the index.
+  payload and the index. The id keeps its `stamp-8hex` shape and existing
+  snapshots are not renamed, so an id already written still resolves and still
+  lists; only ids taken after this change are derived from the payload hash.
 - A corroborator finding about no single node is labelled `(graph)` instead of
   rendering as an empty column and a stray colon. A count across the whole tree
   is a real finding, not a finding missing its node, and the kernel already
