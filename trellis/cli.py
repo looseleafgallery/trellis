@@ -1994,7 +1994,28 @@ def cmd_reconcile(args) -> int:
                 "reconciled.\n`--all` walks them again."
             )
         else:
-            print(f"nothing to check - all {annotated} annotated edges are confirmed")
+            # `confirmed` folded `verified` and `stated` into one bucket and
+            # named it after the wrong half. The fold itself is right - the
+            # question is whether the edge came from outside the modeller's
+            # head - but a `stated` edge is one somebody asserted and nobody
+            # checked, so calling it confirmed reads as "done" about exactly
+            # the edges worth promoting next. Name the counting rule in the
+            # answer instead, and let the remaining risk stay visible.
+            counts = [
+                (how, sum(1 for c in claims if c.how == how))
+                for how in ("verified", "stated")
+            ]
+            counted = ", ".join(f"{n} {how}" for how, n in counts if n)
+            print(f"nothing to check - {counted}; none inferred or assumed")
+            if annotated < total:
+                # The old sentence said "annotated edges", which was the only
+                # thing distinguishing this from a claim about every edge.
+                # Unannotated edges are not checked and not counted; saying so
+                # is cheaper than letting the reader assume coverage.
+                print(
+                    f"{total - annotated} of {total} edges carry no `evidence:`, "
+                    f"so nothing is claimed about them."
+                )
         if checked:
             print(f"\nchecked {checked} edge(s) so far; {wrong} turned out wrong.")
         return 0
