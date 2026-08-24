@@ -11,7 +11,11 @@ dependencies = ["PyYAML>=6.0"]
 [project.optional-dependencies]
 # The engine needs none of this; only `trellis log` does.
 llm = ["anthropic>=0.69", "pydantic>=2.0"]
-dev = ["pytest>=8.0", "anthropic>=0.69", "pydantic>=2.0"]
+# `ruff` is pinned to exactly what `.pre-commit-config.yaml` pins, so the commit
+# hook and the command CONTRIBUTING tells you to run cannot disagree about what
+# passes. A linter is not semver-safe: a new minor adds rules and moves
+# formatting, so a floating version turns an unrelated release into a red run.
+dev = ["pytest>=8.0", "anthropic>=0.69", "pydantic>=2.0", "ruff==0.14.5"]
 
 [project.scripts]
 trellis = "trellis.cli:main"

@@ -211,6 +211,16 @@ expensive to break.
 
 ### Fixed
 
+- `pip install -e '.[dev]'` now installs `ruff`, so the second of the two
+  commands CONTRIBUTING and CLAUDE.md give you can actually be run. It was in
+  no dependency list, so the documented lint step was `No such file or
+  directory` from a clean checkout — exit 127, and the `&&` after it meant
+  `ruff format --check` never ran either. CI never caught it because CI is the
+  one place that does not follow those instructions: it installs ruff from an
+  action rather than from this project's metadata, so the gate was green
+  everywhere except where a contributor stands. Pinned to the exact version
+  `.pre-commit-config.yaml` already pinned, and a test now fails if the two
+  numbers drift or if the docs name a `.venv/bin` tool nothing installs.
 - `trellis deps --json` printed a heading before the payload, so its output was
   not JSON and no consumer could parse it. Found by the new interface guard on
   its first run. It now emits `{node, direction, nodes}` and nothing else.
