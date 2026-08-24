@@ -11,6 +11,17 @@ expensive to break.
 
 ### Added
 
+- `meta.payload_version` on the snapshot payload, so a plugin can refuse a
+  payload it does not understand instead of reading a missing key as an empty
+  one. Deliberately separate from `engine_version`, which changes when a
+  computation changes and every cache entry must be dropped - an event no
+  consumer should care about.
+- `acknowledgements` in the payload: node, code, date and **why**, so a client
+  can show why a finding was answered rather than only how many were. A count
+  cannot be rendered into anything a person can act on.
+- The snapshot payload shape is pinned by tests. It is the plugin contract -
+  what a renderer reads on stdin and what any human-facing client is built
+  against - and it was the larger of the two interfaces left unguarded.
 - Every answer in `review` states its **side effect** at the moment of
   choosing, not in documentation read afterwards: what it writes, which file
   it lands in, whether it is permanent, and who else ends up seeing it. A

@@ -195,3 +195,95 @@ def test_a_node_row_is_shaped_the_same_everywhere(workspace, capsys):
         assert shape(row) == state[row["id"]], (
             f"`ready` and `state` disagree about the shape of {row['id']}"
         )
+
+
+# The snapshot payload is the plugin contract - what a renderer reads on
+# stdin, and what any human-facing client is built against. #66 pinned the
+# `--json` commands and left this unpinned, which is the larger surface.
+SNAPSHOT_KEYS = {
+    "meta",
+    "summary",
+    "nodes",
+    "titles",
+    "refs",
+    "findings",
+    "acknowledged",
+    "acknowledgements",
+    "trust",
+}
+SNAPSHOT_META_KEYS = {
+    "payload_version",
+    "taken_at",
+    "message",
+    "state_hash",
+    "graph_sha",
+    "nodes",
+    "engine_version",
+    "trellis_version",
+}
+
+
+def _payload(workspace):
+    from trellis.cache import Cache
+    from trellis.engine import Engine
+    from trellis.loader import load_graph
+    from trellis.snapshot import capture
+
+    graph = load_graph(workspace)
+    return capture(workspace, Engine(graph, Cache(workspace.parent / ".trellis")))
+
+
+def test_the_snapshot_payload_is_the_plugin_contract(workspace):
+    """A renderer, a dashboard and a desktop client all read this.
+
+    A key that quietly changes name breaks every one of them at once, with no
+    error anywhere. Change it on purpose and update this set in the same
+    commit; the diff is the record.
+    """
+    payload = _payload(workspace)
+    assert set(payload) == SNAPSHOT_KEYS
+    assert set(payload["meta"]) == SNAPSHOT_META_KEYS
+
+
+def test_a_plugin_can_refuse_a_payload_it_does_not_understand(workspace):
+    """`engine_version` changes when a computation changes and every cache
+    entry must be dropped, which is none of a plugin's business. The payload
+    version changes only when a consumer could break."""
+    from trellis.snapshot import PAYLOAD_VERSION
+
+    meta = _payload(workspace)["meta"]
+    assert meta["payload_version"] == PAYLOAD_VERSION
+    assert isinstance(meta["payload_version"], int)
+    # both are present and independent; a consumer keys on the payload one
+    assert "engine_version" in meta
+
+
+def test_acknowledgements_reach_a_consumer_with_their_reasons(workspace, capsys):
+    """A count cannot be rendered into anything a person can act on."""
+    from trellis import cli
+
+    (workspace / "solo.yaml").write_text(
+        "nodes:\n"
+        "  - id: solo\n"
+        "    title: Solo\n"
+        "    status: not_started\n"
+        "    acknowledge: [inert_node]\n"
+    )
+    cli.main(
+        [
+            "--graph",
+            str(workspace),
+            "set",
+            "solo",
+            "title=Solo work",
+            "-y",
+            "--because",
+            "seed",
+        ]
+    )
+    payload = _payload(workspace)
+    assert payload["acknowledged"] == 1
+    # the count is still there for anything that only needs a badge
+    assert isinstance(payload["acknowledgements"], list)
+    for row in payload["acknowledgements"]:
+        assert set(row) == {"node", "code", "at", "why"}
