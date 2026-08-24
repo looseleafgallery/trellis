@@ -15,6 +15,7 @@ reformats a payload by accident.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -287,3 +288,45 @@ def test_acknowledgements_reach_a_consumer_with_their_reasons(workspace, capsys)
     assert isinstance(payload["acknowledgements"], list)
     for row in payload["acknowledgements"]:
         assert set(row) == {"node", "code", "at", "why"}
+
+
+def test_the_manual_is_installed_beside_the_code(workspace, capsys):
+    """An agent in someone else's repo has the package and not this repository.
+
+    If the manual is not packaged, `brief` is a command that works for the
+    people who least need it.
+    """
+    from trellis import cli
+
+    installed = Path(cli.__file__).with_name("manual.md")
+    assert installed.exists(), "manual.md is not next to the code that reads it"
+
+    assert cli.main(["--graph", str(workspace), "brief"]) == 0
+    out = capsys.readouterr().out
+    # the live header, then the manual
+    assert "This graph, right now" in out
+    assert "nodes at" in out
+    assert "Working with trellis" in out
+
+
+def test_brief_still_helps_when_the_graph_will_not_load(tmp_path, capsys):
+    """The moment someone most needs the manual is when nothing works."""
+    from trellis import cli
+
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text("nodes:\n  - id: broken\n    status: nonsense\n")
+
+    assert cli.main(["--graph", str(graph_dir), "brief"]) == 0
+    out = capsys.readouterr().out
+    assert "will not load" in out
+    assert "Working with trellis" in out
+
+
+def test_brief_can_skip_the_graph_summary(workspace, capsys):
+    from trellis import cli
+
+    assert cli.main(["--graph", str(workspace), "brief", "--manual-only"]) == 0
+    out = capsys.readouterr().out
+    assert "This graph, right now" not in out
+    assert "Working with trellis" in out

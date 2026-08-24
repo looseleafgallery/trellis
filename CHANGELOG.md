@@ -11,6 +11,19 @@ expensive to break.
 
 ### Added
 
+- `trellis brief` - the operating manual, for an agent starting on a graph it
+  did not build. `AGENTS.md` now ships with the package, so an agent working
+  in someone else's repository no longer has to go and read the trellis source
+  to learn the grammar. Prints three lines about the graph in front of it
+  first, and still prints the manual when the graph will not load, because
+  that is when someone most needs it.
+- **`acknowledge` now requires a reason.** Blank has too many readings -
+  obvious, unknown, in a hurry, disagreed but moved on - and a reader has to
+  guess which. `reject` already refused without one; an acknowledgement is
+  permanent and a rejection is not, so the argument is stronger here. The
+  prompt now names the test as well as asking the question: *the fact that
+  makes this permanently true*. Declining leaves the finding open rather than
+  answering it with a blank.
 - `meta.payload_version` on the snapshot payload, so a plugin can refuse a
   payload it does not understand instead of reading a missing key as an empty
   one. Deliberately separate from `engine_version`, which changes when a

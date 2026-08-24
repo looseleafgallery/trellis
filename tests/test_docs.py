@@ -177,3 +177,19 @@ def test_the_changelog_has_an_unreleased_section_with_content():
     unreleased = text.split("## [Unreleased]", 1)[1].split("\n## ", 1)[0]
     assert unreleased.strip(), "the Unreleased section is empty"
     assert "- " in unreleased, "the Unreleased section lists nothing"
+
+
+def test_the_packaged_manual_matches_the_one_in_the_repo():
+    """`trellis brief` ships AGENTS.md so an agent in another repo can read it.
+
+    Two copies of a document drift, and the drift is invisible: the repo copy
+    is the one people review, the packaged copy is the one agents obey. So the
+    duplication is allowed and guarded rather than trusted.
+    """
+    repo = (ROOT / "AGENTS.md").read_text()
+    packaged = (ROOT / "trellis" / "manual.md").read_text()
+    assert packaged == repo, (
+        "trellis/manual.md has drifted from AGENTS.md. "
+        "Copy AGENTS.md over it in the same commit - the packaged manual is "
+        "what agents in other repositories actually read."
+    )

@@ -304,6 +304,25 @@ Every applied change is appended to `history/journal.jsonl` with the sentence
 that produced it. The YAML holds current state and git holds the diffs; neither
 holds the *why*.
 
+### Starting somewhere you did not build
+
+An agent working in your repository has `trellis` installed and no copy of
+this one. `trellis brief` prints the operating manual — the same `AGENTS.md`
+that ships with the package — with three lines about the graph in front of it
+first:
+
+```
+$ trellis brief
+# This graph, right now
+
+- 21 nodes at /path/to/graph
+- 0 findings, 0 error(s), 7 acknowledged
+- ready to pick up: core.concurrency, dist.release_process, ...
+```
+
+It still prints the manual when the graph will not load, because that is when
+someone most needs it. `--manual-only` skips the summary.
+
 ### Propose now, decide later
 
 Something models and someone decides, and they are almost never at the keyboard

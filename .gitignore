@@ -7,3 +7,7 @@ __pycache__/
 .trellis/
 *.egg-info/
 .pytest_cache/
+
+# setuptools leaves this behind on a local install
+build/
+*.egg-info/
