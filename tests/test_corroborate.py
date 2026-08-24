@@ -87,6 +87,35 @@ def test_codes_are_namespaced(project):
     assert found[0].code == "linear:cycle"
 
 
+def test_a_finding_about_no_one_node_is_labelled_graph_level(project):
+    """A count across the tree is a real finding, not a finding missing a node."""
+    declare(
+        project,
+        "linear",
+        "import json,sys\n"
+        "json.load(sys.stdin)\n"
+        "print(json.dumps([{'code': 'unmodelled', 'severity': 'warn',\n"
+        "  'message': '33 ticket(s) in the tables have no node'}]))\n",
+    )
+    found = corroborate.gather(project, {})
+    assert found[0].node == corroborate.GRAPH_LEVEL == "(graph)"
+
+
+def test_doctor_renders_a_graph_level_finding_without_an_empty_slot(project, capsys):
+    declare(
+        project,
+        "linear",
+        "import json,sys\n"
+        "json.load(sys.stdin)\n"
+        "print(json.dumps([{'code': 'unmodelled', 'severity': 'warn',\n"
+        "  'message': '33 ticket(s) in the tables have no node'}]))\n",
+    )
+    cli.main(["--graph", str(project), "doctor"])
+    out = capsys.readouterr().out
+    assert "  ? (graph): 33 ticket(s) in the tables have no node" in out
+    assert "  ? : " not in out
+
+
 def test_a_corroborator_may_not_claim_an_error(project):
     """`error` means the graph cannot evaluate. Only the kernel establishes that."""
     declare(

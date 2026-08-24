@@ -1936,8 +1936,9 @@ def cmd_snapshot(args) -> int:
 
     if not is_new:
         print(
-            f"nothing has changed since {entry.id} - the derived state is "
-            f"identical.\nuse --force to take one anyway."
+            f"nothing has changed since {entry.id} - the payload is identical, "
+            f"apart from\nits timestamps and the trust layer, which read live.\n"
+            f"use --force to take one anyway."
         )
         return 0
 

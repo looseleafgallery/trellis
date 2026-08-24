@@ -16,9 +16,16 @@ failing loudly when something is out of date. Nothing here ever refreshes a
 snapshot in place, and nothing presents one as current. `state` and `doctor`
 answer for now; this answers for then.
 
-Snapshots are content-addressed by the derived state they capture, so taking
-one twice from an unchanged graph is recognised rather than duplicated — and so
-a future timeline over them is an index query rather than a rebuild.
+Snapshots are content-addressed by what they capture, so taking one twice from
+an unchanged graph is recognised rather than duplicated — and so a future
+timeline over them is an index query rather than a rebuild.
+
+*Unchanged* is asked of the whole payload and not only of the derived state
+inside it. The payload is the plugin contract, so
+anything it ships is something a consumer may join on: a `refs` index that had
+gained thirty-one entries once counted as "nothing has changed", and every
+corroborator reading that snapshot joined on an empty map and reported the
+whole tree as unmodelled.
 """
 
 from __future__ import annotations
@@ -79,6 +86,33 @@ def _state_hash(engine: Engine) -> str:
     derived = engine.all_derived()
     payload = sorted(f"{nid}:{d.key}" for nid, d in derived.items())
     return hashlib.sha256("\n".join(payload).encode()).hexdigest()[:16]
+
+
+# Sections left out of the gate below, because they move on their own. `meta`
+# carries the timestamp and the head sha; `trust` is read from today's git
+# history, so staleness and volatility change with the clock and nothing else.
+# Including either would make every snapshot new, which is not deduplication
+# with an exception - it is no deduplication at all.
+LIVE_SECTIONS = ("meta", "trust")
+
+
+def _payload_hash(payload: dict) -> str:
+    """Content address of everything the payload *pins*.
+
+    `_state_hash` covers derived state, which is what the id is built from and
+    what the cache makes exact. It is not what a consumer reads. The payload
+    also carries `titles`, `refs`, `findings` and the acknowledgements behind
+    them, and a change to any of those is a change to the contract a renderer
+    or corroborator was handed - so it is a change worth recording, even when
+    no status moved.
+
+    Whole-payload by construction rather than a list of interesting keys: a key
+    added later is gated the day it ships, which is the failure this exists to
+    prevent. What it deliberately excludes is `LIVE_SECTIONS`.
+    """
+    pinned = {k: v for k, v in payload.items() if k not in LIVE_SECTIONS}
+    canonical = json.dumps(pinned, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
 def capture(graph_dir: str | Path, engine: Engine, message: str = "") -> dict:
@@ -152,6 +186,10 @@ class Entry:
     graph_sha: str | None
     message: str
     nodes: int
+    # What the next `snapshot` compares against. Empty on entries written
+    # before it existed, which is not the same as "matches nothing" - see
+    # `_pinned_hash_of`.
+    payload_hash: str = ""
     assets: list[dict] = field(default_factory=list)
 
     def age_days(self, now: datetime | None = None) -> int | None:
@@ -166,6 +204,7 @@ class Entry:
             "id": self.id,
             "taken_at": self.taken_at,
             "state_hash": self.state_hash,
+            "payload_hash": self.payload_hash,
             "graph_sha": self.graph_sha,
             "message": self.message,
             "nodes": self.nodes,
@@ -178,6 +217,7 @@ class Entry:
             id=data["id"],
             taken_at=data.get("taken_at", ""),
             state_hash=data.get("state_hash", ""),
+            payload_hash=data.get("payload_hash", ""),
             graph_sha=data.get("graph_sha"),
             message=data.get("message", ""),
             nodes=data.get("nodes", 0),
@@ -291,6 +331,24 @@ def render(
 # -- taking one --------------------------------------------------------------
 
 
+def _pinned_hash_of(graph_dir: str | Path, entry: Entry) -> str | None:
+    """What the previous snapshot pinned, or None if that cannot be known.
+
+    Indexed since this check existed. An entry written before it is not a
+    mismatch and not a match — it was addressed by derived state alone, which
+    says nothing about the `refs` in it. The stored payload does say, so read
+    it; if it has been deleted, the honest answer is that we do not know, and
+    an unknown must not be reported as "nothing has changed".
+    """
+    if entry.payload_hash:
+        return entry.payload_hash
+    path = snapshot_dir(graph_dir) / entry.id / "snapshot.json"
+    try:
+        return _payload_hash(json.loads(path.read_text()))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def take(
     graph_dir: str | Path,
     engine: Engine,
@@ -300,9 +358,11 @@ def take(
 ) -> tuple[Entry, bool]:
     """Write a snapshot and any requested artifacts. Returns (entry, is_new).
 
-    If the derived state is identical to the most recent snapshot, nothing is
-    written unless forced — the point of content addressing is that taking the
-    same picture twice is recognisable rather than duplicated.
+    If everything the payload pins is identical to the most recent snapshot,
+    nothing is written unless forced — the point of content addressing is that
+    taking the same picture twice is recognisable rather than duplicated. The
+    comparison is of the payload rather than of the derived state inside it,
+    because a consumer joins on the whole thing. See `_payload_hash`.
     """
     configured = load_renderers(graph_dir)
     # Validated before anything else: asking for an artifact that cannot be
@@ -315,23 +375,31 @@ def take(
 
     payload = capture(graph_dir, engine, message)
     state_hash = payload["meta"]["state_hash"]
+    payload_hash = _payload_hash(payload)
 
     existing = read_index(graph_dir)
-    if existing and existing[-1].state_hash == state_hash and not force:
-        already = {a["renderer"] for a in existing[-1].assets}
+    previous = existing[-1] if existing and not force else None
+    if previous and _pinned_hash_of(graph_dir, previous) == payload_hash:
+        already = {a["renderer"] for a in previous.assets}
         missing = [n for n in (renderers_wanted or []) if n not in already]
         if missing:
             raise SnapshotError(
-                f"nothing has changed since {existing[-1].id}, but it has no "
+                f"nothing has changed since {previous.id}, but it has no "
                 f"{', '.join(missing)} artifact. Use --force to take a new "
                 f"snapshot with it."
             )
-        return existing[-1], False
+        return previous, False
 
     # Filename-safe and sortable. The full timestamp with its offset stays in
     # the payload and the index; this is only the id.
+    #
+    # Addressed by what it pins rather than by derived state alone, because the
+    # stamp is only second-precision: two snapshots that differ *only* in refs
+    # would otherwise share a directory, and the second would overwrite the
+    # first. Refreshing a snapshot in place is the one thing this module
+    # promises never to do. `state_hash` is still in the payload and the index.
     stamp = _now().strftime("%Y%m%dT%H%M%SZ")
-    snapshot_id = f"{stamp}-{state_hash[:8]}"
+    snapshot_id = f"{stamp}-{payload_hash[:8]}"
     target = snapshot_dir(graph_dir) / snapshot_id
     target.mkdir(parents=True, exist_ok=True)
     (target / "snapshot.json").write_text(json.dumps(payload, indent=2) + "\n")
@@ -365,6 +433,7 @@ def take(
         id=snapshot_id,
         taken_at=payload["meta"]["taken_at"],
         state_hash=state_hash,
+        payload_hash=payload_hash,
         graph_sha=payload["meta"]["graph_sha"],
         message=message,
         nodes=payload["meta"]["nodes"],

@@ -112,6 +112,132 @@ def test_age_is_computed_from_when_it_was_taken(project):
     assert entry.age_days(later) == 9
 
 
+# -- what counts as a change -------------------------------------------------
+
+
+def give_a_ref(graph_dir, node_id="tools.registry", ref="ENG-1552"):
+    """Annotate one node with an external id, changing nothing derived."""
+    path = graph_dir / "tools.yaml"
+    body = path.read_text()
+    anchor = f"  - id: {node_id}\n"
+    assert anchor in body, f"fixture no longer declares {node_id}"
+    path.write_text(body.replace(anchor, f"{anchor}    ref: {ref}\n", 1))
+
+
+def stored(graph_dir, snapshot_id):
+    path = snapshot.snapshot_dir(graph_dir) / snapshot_id / "snapshot.json"
+    return json.loads(path.read_text())
+
+
+def forget_payload_hash(graph_dir):
+    """Rewrite the index as a version before the payload was compared wrote it."""
+    path = snapshot.snapshot_dir(graph_dir) / snapshot.INDEX_NAME
+    lines = []
+    for line in path.read_text().splitlines():
+        entry = json.loads(line)
+        entry.pop("payload_hash")
+        lines.append(json.dumps(entry))
+    path.write_text("\n".join(lines) + "\n")
+
+
+def test_a_change_to_refs_alone_is_a_new_snapshot(project):
+    """The reported bug: 31 nodes gained a ref and this was called nothing.
+
+    `refs` is in the payload, so a corroborator joins on it. A stored one that
+    is empty while the graph has thirty-one does not report a disagreement -
+    it reports the whole tree as unmodelled, confidently.
+    """
+    first, _ = take(project)
+    give_a_ref(project)
+    second, is_new = take(project)
+
+    assert is_new, "the refs index a consumer joins on had changed"
+    assert second.id != first.id
+    assert stored(project, first.id)["refs"] == {}
+    assert stored(project, second.id)["refs"]["tools.registry"] == "ENG-1552"
+
+
+def test_the_derived_state_could_not_have_seen_that(project):
+    """Why it was invisible, pinned so the reason stays visible.
+
+    `ref` is deliberately outside the fingerprint - it cannot change a derived
+    value, so it must not invalidate a cache entry. The state hash therefore
+    cannot notice it, and the state hash is what used to gate the write.
+    """
+    before = snapshot.capture(project, Engine(load_graph(project)))
+    give_a_ref(project)
+    after = snapshot.capture(project, Engine(load_graph(project)))
+
+    assert before["meta"]["state_hash"] == after["meta"]["state_hash"]
+    assert before["refs"] != after["refs"]
+
+
+def test_a_retitled_node_is_a_new_snapshot_too(project):
+    """Same rule, different key: titles ship, so a stale one is a wrong label."""
+    take(project)
+    path = project / "tools.yaml"
+    body = path.read_text()
+    assert "title: Tool registry and discovery\n" in body
+    path.write_text(body.replace("Tool registry and discovery", "Tool registry"))
+
+    entry, is_new = take(project)
+    assert is_new
+    assert stored(project, entry.id)["titles"]["tools.registry"] == "Tool registry"
+
+
+def test_everything_the_payload_pins_gates_it_and_nothing_else_does(project):
+    """The general rule, so a key added later is gated the day it ships.
+
+    Whole-payload minus the sections that move on their own: `meta` carries the
+    timestamp, and `trust` is read from today's git history. Gating on either
+    would mean a new snapshot on every run.
+    """
+    payload = snapshot.capture(project, Engine(load_graph(project)))
+    address = snapshot._payload_hash(payload)
+
+    for section in payload:
+        mutated = {**payload, section: "something else"}
+        if section in snapshot.LIVE_SECTIONS:
+            assert snapshot._payload_hash(mutated) == address, section
+        else:
+            assert snapshot._payload_hash(mutated) != address, section
+
+
+def test_the_index_records_what_was_compared(project):
+    entry, _ = take(project)
+    line = (snapshot.snapshot_dir(project) / snapshot.INDEX_NAME).read_text()
+    assert entry.payload_hash
+    assert json.loads(line)["payload_hash"] == entry.payload_hash
+
+
+def test_an_entry_indexed_before_this_check_is_read_from_its_payload(project):
+    """Upgrading must not cost one more stale snapshot."""
+    take(project)
+    forget_payload_hash(project)
+    give_a_ref(project)
+
+    entry, is_new = take(project)
+    assert is_new
+    assert stored(project, entry.id)["refs"]["tools.registry"] == "ENG-1552"
+
+
+def test_an_older_entry_with_nothing_changed_is_still_recognised(project):
+    first, _ = take(project)
+    forget_payload_hash(project)
+    second, is_new = take(project)
+    assert not is_new and second.id == first.id
+
+
+def test_a_missing_payload_is_not_evidence_that_nothing_changed(project):
+    """An unknown is not a match. Deleted the file, so we cannot know."""
+    first, _ = take(project)
+    forget_payload_hash(project)
+    (snapshot.snapshot_dir(project) / first.id / "snapshot.json").unlink()
+
+    _entry, is_new = take(project)
+    assert is_new
+
+
 # -- renderers ---------------------------------------------------------------
 
 
@@ -238,6 +364,30 @@ def test_cli_says_it_is_frozen(project, capsys):
     out = capsys.readouterr().out
     assert "it is a snapshot" in out
     assert "will not update" in out
+
+
+def test_cli_says_what_it_compared_before_skipping(project, capsys):
+    """A skip is a claim about the graph, so it has to say what it checked."""
+    cli.main(["--graph", str(project), "snapshot"])
+    capsys.readouterr()
+
+    assert cli.main(["--graph", str(project), "snapshot"]) == 0
+    out = capsys.readouterr().out
+    assert "nothing has changed since" in out
+    assert "the payload is identical" in out
+    assert "trust layer, which read live" in out
+    assert "use --force to take one anyway" in out
+
+
+def test_cli_takes_one_when_only_a_ref_moved(project, capsys):
+    cli.main(["--graph", str(project), "snapshot"])
+    capsys.readouterr()
+    give_a_ref(project)
+
+    assert cli.main(["--graph", str(project), "snapshot"]) == 0
+    out = capsys.readouterr().out
+    assert "nothing has changed" not in out
+    assert "frozen at" in out
 
 
 def test_cli_reports_an_unknown_renderer(project, capsys):
