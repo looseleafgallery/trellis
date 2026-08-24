@@ -256,6 +256,30 @@ expensive to break.
   carrying no `evidence:` at all are now said to be uncounted rather than left
   implied by the word "annotated".
 
+- `snapshot` decides whether anything changed from the **whole payload**, not
+  from the derived state inside it. `refs` ships in the payload and is what a
+  corroborator joins on, but it is outside the fingerprint by design - it
+  cannot change a derived value, so it must not invalidate a cache entry. The
+  result was that thirty-one nodes could be migrated onto `ref:` and `snapshot`
+  would answer "nothing has changed", leaving an empty index in the file every
+  external checker reads. One did: it joined on that index, missed every
+  lookup, and reported sixty-one tickets as unmodelled - a confident, plausible
+  wrong answer from a stale field the tool had declined to refresh. The payload
+  is the plugin contract, so anything in it is something a consumer can be
+  wrong about. Everything it pins now gates the write; `meta` and `trust` do
+  not, because they carry the timestamp and today's git history and would make
+  every run a new snapshot. The index records the hash that was compared, and
+  an entry written before it is read from its stored payload rather than
+  assumed to match. The skip message now says what it checked.
+- A snapshot id is addressed by what it pins rather than by derived state
+  alone. The stamp is second-precision, so two snapshots differing only in
+  `refs` shared a directory and the second overwrote the first - the one thing
+  the module promises never to do. `state_hash` is unchanged in both the
+  payload and the index.
+- A corroborator finding about no single node is labelled `(graph)` instead of
+  rendering as an empty column and a stray colon. A count across the whole tree
+  is a real finding, not a finding missing its node, and the kernel already
+  labels its own graph-level findings this way.
 - `pip install -e '.[dev]'` now installs `ruff`, so the second of the two
   commands CONTRIBUTING and CLAUDE.md give you can actually be run. It was in
   no dependency list, so the documented lint step was `No such file or

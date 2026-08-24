@@ -74,6 +74,13 @@ make it one:
 - **The payload shape is pinned by tests.** Changing it means editing the
   expected set in the same commit, so the diff is the record that an interface
   change was intended rather than incidental.
+- **Nothing in the payload can be stale relative to the graph it was taken
+  from.** Whether anything changed is asked of everything the payload pins, not
+  of the derived state inside it, so a `refs` index a corroborator joins on
+  cannot silently be a version behind. Without that, every consumer would have
+  to `--force` a fresh snapshot before reading one, which is the deduplication
+  gone. The exceptions are the parts that read live and say so: the timestamps
+  in `meta`, and `trust`.
 - **Counts come with their reasons.** `acknowledged: 7` cannot be rendered into
   anything a person can act on, so `acknowledgements` carries the node, the
   code, the date and the *why*. A client that can only show a badge is a client

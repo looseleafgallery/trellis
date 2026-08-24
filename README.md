@@ -771,10 +771,16 @@ So: nothing ever refreshes one in place, nothing presents one as current, and
 age leads every listing. `state` and `doctor` answer for now; this answers for
 then.
 
-Snapshots are content-addressed by the derived state they capture. Taking one
-twice from an unchanged graph is recognised rather than duplicated. They live in
-`snapshots/`, are meant to be committed, and are indexed in
-`snapshots/index.jsonl`.
+Snapshots are content-addressed by what they capture. Taking one twice from an
+unchanged graph is recognised rather than duplicated. They live in `snapshots/`,
+are meant to be committed, and are indexed in `snapshots/index.jsonl`.
+
+**Unchanged means the whole payload, not just the derived state in it.** A ref
+you added, a node you retitled and a finding that appeared are all things a
+consumer reads, so each is a change worth recording even though no status
+moved. The two parts that read live are excluded — the timestamps, and the
+trust layer, which is computed against today's git history — because gating on
+those would make every run a new snapshot.
 
 A renderer is anything that reads JSON on stdin and writes an artifact on
 stdout:

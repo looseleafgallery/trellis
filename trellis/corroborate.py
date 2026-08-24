@@ -39,6 +39,10 @@ CONFIG_NAME = "trellis.toml"
 # What an external source may claim. `error` is reserved for the kernel.
 ALLOWED_SEVERITY = ("info", "warn")
 DEFAULT_TIMEOUT = 30
+# Not every finding is about a node. "33 tickets in the tables have no node" is
+# a fact about the whole tree, and it rendered as an empty column and a stray
+# colon. The kernel already labels its own graph-level findings this way.
+GRAPH_LEVEL = "(graph)"
 
 
 class CorroboratorError(RuntimeError):
@@ -109,7 +113,7 @@ def _parse(name: str, raw: bytes) -> list[Finding]:
         code = str(item.get("code") or "finding")
         out.append(
             Finding(
-                node=str(item.get("node", "")),
+                node=str(item.get("node") or "").strip() or GRAPH_LEVEL,
                 # Namespaced so a reader can see where it came from, and so a
                 # corroborator cannot impersonate a kernel diagnostic.
                 code=f"{name}:{code}",
@@ -152,7 +156,7 @@ def run(
 def _could_not_run(name: str, detail: str) -> Finding:
     """A corroborator that did not run has told you nothing, not that all is well."""
     return Finding(
-        node="(graph)",
+        node=GRAPH_LEVEL,
         code=f"{name}:did_not_run",
         severity="warn",
         message=(
