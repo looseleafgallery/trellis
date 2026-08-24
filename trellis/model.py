@@ -477,6 +477,35 @@ class Graph:
         """Every declared external id, keyed by node."""
         return {nid: n.ref for nid, n in self.nodes.items() if n.ref}
 
+    def structure_hash(self) -> str:
+        """Content address of the graph's *shape* - what could produce an edge.
+
+        A node's `fingerprint` answers "did this node change". This answers a
+        different question: **could a relationship have appeared anywhere since
+        I last looked.** An edge exists only because some expression names a
+        node, so only three things can create one - a node appearing, a gate
+        expression changing, or a contract's `satisfied_by` changing. Statuses,
+        notes, evidence and acknowledgements cannot, however much they move.
+
+        That makes a *negative* result durable, which is the point. "I looked
+        for relationships to this node and found none" is worth recording, and
+        recording it needs an exact expiry: not a date, which is arbitrary, but
+        the picture the search was performed against. If this hash has not
+        moved, the search still holds - by construction, not by estimate.
+
+        Deliberately coarse. Knowing which searches a change *could* have
+        affected would mean knowing the expressions before they are written, so
+        any structural change expires every recorded search. Looking again
+        cheaply is the right side to err on.
+        """
+        payload = []
+        for node in sorted(self.nodes.values(), key=lambda n: n.id):
+            gates = ";".join(
+                f"{name}={expr}" for name, expr in sorted(node.gate_map.items())
+            )
+            payload.append(f"{node.id}|{gates}|{','.join(sorted(node.satisfied_by))}")
+        return hashlib.sha256("\n".join(payload).encode()).hexdigest()[:16]
+
     def children_of(self, node_id: str) -> tuple[str, ...]:
         return tuple(self._children.get(node_id, ()))
 
