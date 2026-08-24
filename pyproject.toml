@@ -11,7 +11,12 @@ dependencies = ["PyYAML>=6.0"]
 [project.optional-dependencies]
 # The engine needs none of this; only `trellis log` does.
 llm = ["anthropic>=0.69", "pydantic>=2.0"]
-dev = ["pytest>=8.0", "anthropic>=0.69", "pydantic>=2.0"]
+# `ruff` is pinned exactly, and this is the one place the number lives.
+# `ruff format` changes its output between releases, so a floor would let CI
+# and a contributor's venv disagree about what formatted code looks like and
+# fail each other's work. CONTRIBUTING tells you to run `./.venv/bin/ruff`;
+# it has to be there.
+dev = ["pytest>=8.0", "anthropic>=0.69", "pydantic>=2.0", "ruff==0.14.5"]
 
 [project.scripts]
 trellis = "trellis.cli:main"

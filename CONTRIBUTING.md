@@ -55,6 +55,13 @@ throughout — no test read those files. `drift` shipped undocumented across fou
 merges. *Assert the anchor before replacing, and prefer editing a file you have
 just read.*
 
+**A command in the setup instructions is not a command that runs.** The verify
+step above named `./.venv/bin/ruff` from the first commit and nothing installed
+it: CI fetched its own ruff, pre-commit fetched a third, and neither path
+touched the venv these instructions build. Nobody noticed because everyone who
+checks is someone whose checkout already worked. *A tool the docs tell you to
+run belongs in the `dev` extra, so that following the instructions produces it.*
+
 **Green output is not a green run.** `ruff check` was passed through `tail -1`,
 which showed a trailing "no fixes available" line and hid the error above it.
 *Read the whole output of a check, or read its exit code — not its last line.*

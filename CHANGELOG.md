@@ -211,6 +211,15 @@ expensive to break.
 
 ### Fixed
 
+- The linter the contributing guide tells you to run was installed by nothing.
+  `[tool.ruff]` configured it, `CONTRIBUTING.md` and `CLAUDE.md` both say to run
+  `./.venv/bin/ruff`, and the `dev` extra never listed it - so the documented
+  verify step failed with *no such file* on a correctly set-up checkout. The
+  extra now pins `ruff==0.14.5`, and that pin is the only place the number
+  lives: CI installs the extra instead of letting an action resolve its own
+  version, and a test asserts pre-commit agrees. Three unpinned copies of a
+  formatter meant a ruff release could redden a pull request over formatting no
+  contributor could reproduce.
 - `trellis deps --json` printed a heading before the payload, so its output was
   not JSON and no consumer could parse it. Found by the new interface guard on
   its first run. It now emits `{node, direction, nodes}` and nothing else.

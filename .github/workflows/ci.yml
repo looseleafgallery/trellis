@@ -17,12 +17,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
+      - uses: actions/setup-python@v5
         with:
-          args: check --output-format=github
-      - uses: astral-sh/ruff-action@v3
-        with:
-          args: format --check
+          python-version: "3.11"
+      # Installed from the dev extra rather than fetched by an action, so the
+      # ruff that judges a pull request is the same one `pip install -e '.[dev]'`
+      # puts in the contributor's venv. An action that resolves its own version
+      # turns a ruff release into a red build on code nobody touched.
+      - run: pip install -e '.[dev]'
+      - run: ruff check --output-format=github
+      - run: ruff format --check
 
   test:
     runs-on: ubuntu-latest

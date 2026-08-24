@@ -140,6 +140,42 @@ def test_the_version_floor_is_stated_in_one_place_and_agreed_everywhere():
     assert trellis.__version__
 
 
+def test_the_ruff_version_is_pinned_in_one_place_and_agreed_everywhere():
+    """The formatter is a version, not a tool, and three copies of it drifted.
+
+    `ruff` was configured in pyproject.toml and installed by nothing: the dev
+    extra did not list it, so `./.venv/bin/ruff` - the command CONTRIBUTING and
+    CLAUDE.md both tell you to run - did not exist. pre-commit fetched its own
+    copy and CI fetched a third, which meant a ruff release could fail a pull
+    request over formatting no contributor could reproduce locally.
+
+    The dev extra is now the pin. pre-commit still fetches its own and has to
+    be told the same number, so that agreement is asserted rather than trusted.
+    """
+    pyproject = (ROOT / "pyproject.toml").read_text()
+    pinned = re.search(r'"ruff==(\d+\.\d+\.\d+)"', pyproject)
+    assert pinned, "the dev extra no longer pins an exact ruff version"
+    version = pinned.group(1)
+
+    precommit = (ROOT / ".pre-commit-config.yaml").read_text()
+    rev = re.search(r"ruff-pre-commit\s*\n\s*rev: v(\d+\.\d+\.\d+)", precommit)
+    assert rev, "the ruff pre-commit hook no longer states a rev"
+    assert rev.group(1) == version, (
+        f"pre-commit runs ruff {rev.group(1)} and the dev extra installs "
+        f"{version}. They format differently, so one of them rejects what the "
+        "other just wrote."
+    )
+
+    # CI installs the dev extra, so it is pinned by construction. If it ever
+    # goes back to fetching ruff itself, that copy has to name the same version.
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    if "ruff-action" in ci:
+        assert f"version: {version}" in ci, (
+            "ci.yml fetches ruff with astral-sh/ruff-action without pinning it "
+            f"to {version}, so CI can format-check with a ruff no contributor has."
+        )
+
+
 def test_every_command_is_documented_in_the_readme():
     """The README is the manual: a command absent from it does not exist.
 
