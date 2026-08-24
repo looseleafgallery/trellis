@@ -56,6 +56,29 @@ from anywhere. Edges are a claim, and a claim needs a source.
 A code scanner emitting `how: inferred` is welcome. One emitting bare edges is
 refused.
 
+### What a plugin may rely on
+
+Everything on the far side of these interfaces is somebody else's program, so
+the payload is a contract rather than an implementation detail. Three rules
+make it one:
+
+- **`meta.payload_version` is the version a consumer keys on.** It changes when
+  the payload gains, loses or renames a key — the only event that can break a
+  reader. `engine_version` is a different number for a different audience: it
+  changes when a *computation* changes and every cache entry must be dropped,
+  which is none of a plugin's business. A plugin that reads `engine_version` is
+  reading the wrong one and will churn for no reason.
+- **The payload shape is pinned by tests.** Changing it means editing the
+  expected set in the same commit, so the diff is the record that an interface
+  change was intended rather than incidental.
+- **Counts come with their reasons.** `acknowledged: 7` cannot be rendered into
+  anything a person can act on, so `acknowledgements` carries the node, the
+  code, the date and the *why*. A client that can only show a badge is a client
+  that cannot help anyone decide anything.
+
+The last one generalises: any number in the payload that a person would ask
+"why?" about ships with the answer, or it is not worth shipping.
+
 ### Corroborators
 
 A corroborator checks the declaration against a system of record and emits

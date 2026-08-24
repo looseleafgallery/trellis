@@ -40,6 +40,14 @@ SNAPSHOT_DIRNAME = "snapshots"
 INDEX_NAME = "index.jsonl"
 CONFIG_NAME = "trellis.toml"
 
+# The shape a renderer or any other consumer reads. Separate from
+# ENGINE_VERSION on purpose: that one changes when a *computation* changes and
+# every cache entry must be discarded, which is none of a plugin's business.
+# This changes when the payload gains, loses or renames a key - the only event
+# a plugin can be broken by. Bumped so a plugin can refuse a payload it does
+# not understand instead of reading a missing key as an empty one.
+PAYLOAD_VERSION = 1
+
 
 class SnapshotError(RuntimeError):
     """A snapshot could not be taken or rendered."""
@@ -83,6 +91,7 @@ def capture(graph_dir: str | Path, engine: Engine, message: str = "") -> dict:
 
     return {
         "meta": {
+            "payload_version": PAYLOAD_VERSION,
             "taken_at": _now().isoformat(timespec="seconds"),
             "message": message,
             "state_hash": _state_hash(engine),
@@ -100,6 +109,21 @@ def capture(graph_dir: str | Path, engine: Engine, message: str = "") -> dict:
         "refs": graph.refs(),
         "findings": [p.as_dict() for p in problems],
         "acknowledged": muted,
+        # The count alone cannot be rendered into anything a person can act
+        # on. A consumer showing "7 acknowledged" and unable to say why any of
+        # them was is the same write-only failure `check` had until #67.
+        "acknowledgements": [
+            {
+                "node": node,
+                "code": code,
+                "at": at,
+                "why": why,
+            }
+            for (node, code), (at, why) in sorted(
+                journal.acknowledgements(graph_dir).items()
+            )
+            if node in graph and code in graph.get(node).acknowledge
+        ],
         "trust": {
             "stale": [e.as_dict() for e in evidence_mod.stale(graph, derived, ev)],
             "churning": [e.as_dict() for e in evidence_mod.churning(ev)],
