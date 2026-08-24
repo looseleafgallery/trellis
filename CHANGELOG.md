@@ -21,8 +21,18 @@ expensive to break.
       why: spike only, one ticket, nothing gates on it yet
   ```
 
-  Schema change, additive: every graph that parsed before parses the same way,
-  and both forms silence the same finding. Until now the reason could only be
+  Schema change, and not a purely additive one. A list of bare codes is
+  unaffected and both forms silence the same finding, but a mapping entry
+  inside `acknowledge` is now *validated* where it used to be stringified.
+  Only `{code, why}` is accepted: an entry with an unknown key, with no
+  `code`, or with a `code` that is not a single scalar is refused by
+  `load_graph`. Every one of those previously loaded, as a code like
+  `"{'reason': 'spike only'}"` - which silenced nothing and then reported
+  itself as a `dead_acknowledgement`. So `acknowledge: [{reason: ...}]` moves
+  from silently-broken-but-loading to refusing to load, and a graph carrying
+  that typo must fix the key before it will load at all. That is a fix and it
+  is deliberate, but it is a graph that used to load and now does not, which
+  is the part to know before upgrading. Until now the reason could only be
   written by `review`, which is interactive, while the acknowledgement itself
   lived in the YAML - so `check` asked for something a graph maintained by
   automation had no way to give it, and the diagnostic would have stayed on
