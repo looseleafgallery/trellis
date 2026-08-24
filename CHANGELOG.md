@@ -11,6 +11,43 @@ expensive to break.
 
 ### Added
 
+- **`install.sh` — installing trellis is one command, PATH included.**
+
+  ```
+  curl -LsSf https://raw.githubusercontent.com/looseleafgallery/trellis/main/install.sh | sh
+  ```
+
+  Installing was friction on every new machine, and the last step was the one
+  that bit. `uv tool install` settles which Python, then leaves `~/.local/bin`
+  on the reader to put on PATH — so the documented install could finish and
+  leave `trellis: command not found` behind it. An install that ends with the
+  command not resolving has not finished.
+
+  The script installs with uv, runs `uv tool update-shell` for the PATH half,
+  and then **verifies by running the command**, which is the point of it rather
+  than a closing flourish. It executes `trellis --version` from the path it
+  installed to — not `command -v`, because being on PATH is a weaker claim than
+  running, and the run also crosses the version guard and the PyYAML import.
+  Then it asks a fresh login shell what `trellis` resolves to. If that is a
+  *different* trellis the script says so and names it, because "trellis
+  resolves" would otherwise be true and useless. Reporting success while the
+  command is not runnable is the failure CONTRIBUTING records as "green output
+  is not a green run", and it is the specific thing this script is built not to
+  do.
+
+  It never installs a package manager silently: if `uv` is missing it says what
+  it is about to install, from where, and into which directory, and
+  `--no-install-uv` refuses. It names the profile file it edited rather than
+  editing one behind your back, and finds that file by checksumming the
+  candidates before and after rather than guessing which one uv picked — uv
+  chose `.zshenv` under zsh, where the guess would have been `.zshrc`.
+  Idempotent: re-running upgrades to current `main` and does not append a
+  second PATH line. It prints its own uninstall line, which names
+  `trellis-kernel`, because that is the distribution and `uv tool uninstall
+  trellis` errors.
+
+  POSIX `sh`, not bash, since the published line pipes it to `sh`.
+
 - **`reconcile` walks the unconfirmed edges most load-bearing first.** It
   walked them in whatever order they came out of the graph, which answers
   *which edge should I check first* by accident. On the first real graph two of
@@ -283,6 +320,23 @@ expensive to break.
   to look clean.
 
 ### Changed
+
+- **README §Try it is split by audience, and no longer opens with `pip`.**
+  "Use it" is the one-line installer; "work on it" links `CONTRIBUTING.md`
+  rather than repeating the recipe. The two jobs were sharing one set of
+  instructions, so someone who only wanted to run `trellis state` would follow
+  the contributor path and build a virtualenv per checkout. Leading with `pip
+  install git+…` never said *which* Python, so it landed wherever `pip`
+  pointed.
+
+  `uv tool install`, `pipx` and `pip` stay documented as manual fallbacks for
+  anyone who will not pipe a script to `sh`. The macOS system-Python-3.9
+  warning moved to sit with the `pip` line, which is the only route it applies
+  to: uv chooses an interpreter against `requires-python` and fetches one if
+  the system has none. The runtime guard in `trellis/__init__.py` is unchanged
+  — it is a backstop, not documentation. The docs now also say that the git URL
+  is deliberate pending the publish under `trellis-kernel`, rather than leaving
+  it to read as something nobody got round to.
 
 - `trellis graph` limits are per format and much higher: 120 nodes as a tree,
   40 as a diagram. They are about readability rather than cost — 800 nodes

@@ -35,21 +35,23 @@ what is actually true right now.
 ## Try it
 
 ```
-python3 --version   # must be 3.11 or newer
-pip install git+https://github.com/looseleafgallery/trellis.git
+curl -LsSf https://raw.githubusercontent.com/looseleafgallery/trellis/main/install.sh | sh
 ```
 
-**Check the version first.** The `pip` bundled with macOS system Python 3.9 is
-old enough to ignore `requires-python`, so the install half-succeeds and the
-first error you see names a missing PyYAML rather than the version. trellis
-raises a clear message on import if it is running on anything older than 3.11,
-but an old pip can get you there in the first place.
+That is the whole install, PATH included. It picks a Python that satisfies the
+3.11 floor — fetching one if your system has none — installs `trellis` as a
+global command, puts the directory it lands in on your PATH, and then runs the
+command to check it works. It reports which profile file it edited, and if
+`trellis` will not resolve until you open a new shell it says so, naming your
+shell and that file. Re-running upgrades to current `main`. It prints its own
+uninstall line.
 
-Or `pipx install git+https://github.com/looseleafgallery/trellis.git` for a
-global `trellis` command. There is no `pip install trellis`: that name belongs
-to an unrelated project on PyPI — an alpha last touched in 2008. When this is
-published it will be as **`trellis-kernel`**. The command, the import, and the
-tool are all `trellis` regardless; only the distribution name differs.
+If `uv` is not already present the script says what it is about to install and
+where, then installs it. To refuse that and be told instead:
+
+```
+curl -LsSf https://raw.githubusercontent.com/looseleafgallery/trellis/main/install.sh | sh -s -- --no-install-uv
+```
 
 No server, no account, nothing to configure. Then try it against the shipped
 example:
@@ -61,6 +63,48 @@ trellis state
 trellis explain agent.emit
 trellis doctor
 ```
+
+### Working on trellis is a different setup
+
+`CONTRIBUTING.md` has the venv-and-editable recipe. That one is right for
+changing trellis's own code and wrong for wanting the command: it gives you a
+virtualenv per checkout and no `trellis` on PATH.
+
+### Installing it by hand
+
+The script wraps one command, so if you would rather not pipe anything to `sh`:
+
+```
+uv tool install git+https://github.com/looseleafgallery/trellis.git
+uv tool update-shell
+```
+
+That is the same install. The second line is the PATH half, and without it the
+binary lands in `~/.local/bin` and `trellis` may still not resolve.
+
+`pipx install git+https://github.com/looseleafgallery/trellis.git` also gives a
+global command. Or, into a virtualenv you manage yourself:
+
+```
+python3 --version   # must be 3.11 or newer
+pip install git+https://github.com/looseleafgallery/trellis.git
+```
+
+**Check the version first, on this route.** The `pip` bundled with macOS system
+Python 3.9 is old enough to ignore `requires-python`, so the install
+half-succeeds and the first error you see names a missing PyYAML rather than
+the version. trellis raises a clear message on import if it is running on
+anything older than 3.11, but an old pip can get you there in the first place.
+The installer and `uv tool install` do not have this problem: they choose an
+interpreter against `requires-python` rather than using whichever `python3`
+they happen to find.
+
+Every one of these takes a git URL rather than a package name, and that is
+deliberate rather than unfinished. There is no `pip install trellis`: that name
+belongs to an unrelated project on PyPI — an alpha last touched in 2008. When
+this is published it will be as **`trellis-kernel`** and these lines get
+shorter. The command, the import, and the tool are all `trellis` regardless;
+only the distribution name differs.
 
 ## The model
 
