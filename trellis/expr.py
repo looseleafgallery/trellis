@@ -168,6 +168,82 @@ def references(src: str) -> set[str]:
     return found
 
 
+# Builtins whose arguments are a list of node references, and which still mean
+# something with one fewer of them. `has` and `len` take a single subject, so
+# dropping its reference would leave a call about nothing — those go whole.
+_OVER_NODES = {"all_done", "any_done", "count_done"}
+# The same, except the first argument is the threshold rather than a node.
+_OVER_NODES_AFTER_COUNT = {"at_least"}
+
+
+def _names(node: ast.AST, drop: Callable[[str], bool]) -> bool:
+    """Whether this sub-expression mentions a reference `drop` selects.
+
+    Asked through `references` rather than by walking here a second time, so
+    what counts as a reference is decided in exactly one place — the same
+    place that decides where the edges are.
+    """
+    return any(drop(dotted) for dotted in references(ast.unparse(node)))
+
+
+def _pruned(node: ast.AST, drop: Callable[[str], bool]) -> ast.AST | None:
+    """The sub-expression without the selected references, or `None` if nothing
+    of it survives."""
+    if not _names(node, drop):
+        return node
+
+    if isinstance(node, ast.BoolOp):
+        kept = [p for p in (_pruned(v, drop) for v in node.values) if p is not None]
+        if not kept:
+            return None
+        if len(kept) == 1:
+            return kept[0]
+        return ast.BoolOp(op=node.op, values=kept)
+
+    if isinstance(node, ast.Call):
+        name = node.func.id if isinstance(node.func, ast.Name) else None
+        if name in _OVER_NODES_AFTER_COUNT:
+            head, rest = node.args[:1], node.args[1:]
+        elif name in _OVER_NODES:
+            head, rest = [], node.args
+        else:
+            return None
+        kept = [p for p in (_pruned(a, drop) for a in rest) if p is not None]
+        # `at_least(2)` is not a weaker `at_least(2, a.done)`, it is a gate
+        # that can never open. With no subjects left the call goes whole.
+        if not kept:
+            return None
+        return ast.Call(func=node.func, args=[*head, *kept], keywords=[])
+
+    return None
+
+
+def without_references(src: str, drop: Callable[[str], bool]) -> str | None:
+    """`src` as it would read had it never named the references `drop` selects.
+
+    What is removed is the smallest *boolean term* containing the reference,
+    not the reference itself. `a.version >= 2` says nothing once `a` is gone,
+    and putting a literal where `a.version` was would quietly change what the
+    comparison asks rather than remove the requirement. So a conjunct goes, a
+    disjunct goes, an argument to `all_done` goes, and anything else holding
+    the reference goes whole.
+
+    `None` means nothing survived, which is the honest answer for a gate whose
+    only requirement was that reference: the gate goes with it.
+
+    Coarse in one direction, deliberately. A term naming two nodes takes both
+    with it, so a caller measuring one edge should compare the references
+    before and after and say what else it had to drop.
+    """
+    body = parse(src).body
+    kept = _pruned(body, drop)
+    if kept is None:
+        return None
+    if kept is body:
+        return src
+    return ast.unparse(ast.Expression(body=kept))
+
+
 class _Evaluator:
     def __init__(self, src: str, resolve: Callable[[str], Any]):
         self.src = src
