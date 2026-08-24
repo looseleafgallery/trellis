@@ -211,6 +211,19 @@ expensive to break.
 
 ### Fixed
 
+- `reconcile` said "all N annotated edges are confirmed" while counting
+  `stated` edges, which nobody checked - someone asserted them and they were
+  written down. The two-bucket fold behind that count is right, and unchanged:
+  the question is whether an edge came from outside the modeller's head, so
+  `verified` and `stated` go together and `inferred` and `assumed` go together.
+  `confirmed` was just the wrong name for the half that contains `stated`, and
+  it reported a graph as finished at the moment its unchecked edges were the
+  only ones left to promote. It now names the counting rule in the answer -
+  `nothing to check - 24 verified, 3 stated; none inferred or assumed` - so the
+  remaining risk is visible without reconstructing where the fold sits. Edges
+  carrying no `evidence:` at all are now said to be uncounted rather than left
+  implied by the word "annotated".
+
 - `pip install -e '.[dev]'` now installs `ruff`, so the second of the two
   commands CONTRIBUTING and CLAUDE.md give you can actually be run. It was in
   no dependency list, so the documented lint step was `No such file or

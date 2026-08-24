@@ -473,3 +473,82 @@ def test_the_menu_says_what_each_answer_does(tmp_path, capsys, monkeypatch):
     assert "this edge is real" in out
     assert "will be back next run" in out
     assert "everything answered so far is kept" in out
+
+
+# Two edges with an external source, one of them only asserted. Deliberately
+# without `at`, so the graph cannot age into a stale verification and make
+# these tests depend on the day they run.
+GRAPH_ALL_SOURCED = """nodes:
+  - id: a
+    title: A
+    status: done
+  - id: b
+    title: B
+    status: done
+  - id: c
+    title: C
+    status: done
+  - id: d
+    title: D
+    status: not_started
+    gates: {start: a.done and b.done and c.done}
+    evidence: {a: verified, b: verified, c: stated}
+"""
+
+
+def test_nothing_to_check_names_what_it_counted(tmp_path, capsys):
+    """`all N annotated edges are confirmed` counted `stated` as confirmed.
+
+    Nobody checked those: someone said so and it was written down. Folding
+    them in with `verified` reported the graph as finished at exactly the
+    moment its unchecked edges were the only ones left to promote.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(GRAPH_ALL_SOURCED)
+
+    assert cli.main(["--graph", str(graph_dir), "reconcile"]) == 0
+    out = capsys.readouterr().out
+    assert "nothing to check - 2 verified, 1 stated; none inferred or assumed" in out
+    assert "confirmed" not in out
+
+
+def test_a_bucket_with_nothing_in_it_is_not_reported(tmp_path, capsys):
+    """`0 stated` invites the reader to wonder what a stated edge would be.
+
+    The sentence is about what was established, so it names only what is
+    there. `none inferred or assumed` stays either way: that is the claim
+    the reader is being asked to act on.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        GRAPH_ALL_SOURCED.replace("c: stated", "c: verified")
+    )
+
+    assert cli.main(["--graph", str(graph_dir), "reconcile"]) == 0
+    out = capsys.readouterr().out
+    assert "nothing to check - 3 verified; none inferred or assumed" in out
+    assert "stated" not in out
+
+
+def test_edges_claiming_nothing_are_not_counted_as_checked(tmp_path, capsys):
+    """The old wording said "annotated edges", which carried this caveat.
+
+    An edge with no `evidence:` is not confirmed, not unconfirmed, and not
+    checked - nothing is claimed about it at all. Rewriting the sentence must
+    not quietly turn a statement about some edges into one about every edge.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        GRAPH_ALL_SOURCED + "  - id: e\n"
+        "    title: E\n"
+        "    status: not_started\n"
+        "    gates: {start: a.done}\n"
+    )
+
+    assert cli.main(["--graph", str(graph_dir), "reconcile"]) == 0
+    out = capsys.readouterr().out
+    assert "nothing to check - 2 verified, 1 stated; none inferred or assumed" in out
+    assert "1 of 4 edges carry no `evidence:`, so nothing is claimed about them" in out
