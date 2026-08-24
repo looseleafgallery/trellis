@@ -179,6 +179,62 @@ def test_the_changelog_has_an_unreleased_section_with_content():
     assert "- " in unreleased, "the Unreleased section lists nothing"
 
 
+def test_the_documented_install_supplies_every_documented_check():
+    """`.[dev]` has to install every tool the setup instructions then run.
+
+    `ruff` was named as the lint gate by both CONTRIBUTING.md and CLAUDE.md and
+    was in no dependency list, so `./.venv/bin/ruff check .` after the
+    documented install was `No such file or directory` — exit 127, and the
+    `&& ruff format --check` after it never ran at all. CI stayed green because
+    CI is the one place that does not follow these instructions: it installs
+    ruff from an action instead of from this project's metadata. A check nobody
+    can run locally is a check that only fails on other people's branches.
+    """
+    import tomllib
+
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    dev = pyproject["project"]["optional-dependencies"]["dev"]
+    declared = {re.match(r"[A-Za-z0-9._-]+", spec).group(0).lower() for spec in dev}
+
+    # The venv supplies its own interpreter and installer; nothing else is free.
+    supplied = {"python", "python3", "pip"}
+
+    for doc in (ROOT / "CONTRIBUTING.md", ROOT / "CLAUDE.md"):
+        text = doc.read_text()
+        named = set(re.findall(r"\./\.venv/bin/([A-Za-z0-9._-]+)", text))
+        assert named, f"{doc.name} no longer runs anything from .venv/bin"
+        missing = sorted(t for t in named - supplied if t.lower() not in declared)
+        assert not missing, (
+            f"{doc.name} tells you to run {missing} after "
+            f"`pip install -e '.[dev]'`, which does not install it"
+        )
+
+
+def test_the_ruff_pin_is_the_same_number_in_both_places():
+    """Two pinned versions of one linter is a coin flip on every commit.
+
+    pre-commit fixes a `rev:`; the dev extra fixes a `==`. If they drift, the
+    hook that blesses a commit and the command that verifies it are different
+    programs, and which one is right depends on which you happened to run.
+    """
+    import tomllib
+
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    dev = pyproject["project"]["optional-dependencies"]["dev"]
+    pinned = [s for s in dev if re.match(r"ruff\s*==", s)]
+    assert pinned, "the dev extra no longer pins ruff to an exact version"
+    version = pinned[0].split("==", 1)[1].strip()
+
+    # Scoped to the ruff repo's own block: the file pins several hooks, and a
+    # bare version search would happily match somebody else's `rev:`.
+    hooks = (ROOT / ".pre-commit-config.yaml").read_text()
+    hooked = re.search(r"astral-sh/ruff-pre-commit\s*\n\s*rev:\s*v?(\S+)", hooks)
+    assert hooked, ".pre-commit-config.yaml no longer pins a ruff-pre-commit rev"
+    assert hooked.group(1) == version, (
+        f"the dev extra pins ruff {version}, pre-commit pins {hooked.group(1)}"
+    )
+
+
 def test_the_packaged_manual_matches_the_one_in_the_repo():
     """`trellis brief` ships AGENTS.md so an agent in another repo can read it.
 
