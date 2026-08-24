@@ -293,10 +293,18 @@ expensive to break.
   Teaching the writer to edit flow style is the larger answer and was
   deliberately not taken. Only the node's own mapping is judged: a flow value
   inside a block node, like `evidence: {how: verified, at: 2026-08-20}`, still
-  loads and still writes, and the shipped example uses one. This does refuse a
-  graph that previously loaded, which is why it is recorded here - but that
-  graph could not be written to either, so what it costs is the read-only half
-  of a node that was already half broken.
+  loads and still writes, and the shipped example uses one.
+
+  **This refuses a graph that previously loaded, and the refusal is total.**
+  Before, a flow-style graph loaded and could be read: `check`, `explain` and
+  `reconcile` all worked, and only `set` and `accept` failed. After, none of
+  them work - `load_graph` refuses first, so every command exits 2 and a
+  flow-style graph cannot be inspected at all until it is rewritten in block
+  style. That is a capability removal and not only a fix, and it is the part
+  to know before upgrading. It is taken deliberately: the node could never be
+  written to, and failing at the door with the file and the line named beats
+  failing at `set` after the person has already decided. Nothing migrates an
+  existing graph; the diagnostic names the line and the edit is the author's.
 - The corroborator severity clamp emitted a double full stop - "which only the
   kernel can establish.. This is silence, not agreement" - because the detail
   it quotes is itself a diagnostic that ends in one.
