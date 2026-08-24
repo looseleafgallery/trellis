@@ -292,6 +292,35 @@ def test_duplicate_ids_rejected(tmp_path):
         load_graph(tmp_path)
 
 
+def test_flow_style_node_rejected_at_load(tmp_path):
+    """It would load and no write could ever land on it, so it is refused here
+    - naming the line, because that is what has to be rewritten."""
+    (tmp_path / "n.yaml").write_text(
+        "nodes:\n"
+        "  - {id: a, title: A, status: done}\n"
+        "  - {id: z, title: Z, status: not_started, gates: {start: a.done}}\n"
+    )
+    with pytest.raises(
+        ModelError, match=r"n\.yaml:2: node 'a' is written in YAML flow style"
+    ):
+        load_graph(tmp_path)
+
+
+def test_a_whole_file_in_flow_style_is_rejected(tmp_path):
+    (tmp_path / "n.yaml").write_text("{id: a, status: done}\n")
+    with pytest.raises(ModelError, match="flow style"):
+        load_graph(tmp_path)
+
+
+def test_a_flow_value_inside_a_block_node_still_loads(tmp_path):
+    """Only the node's own mapping is judged. `gates: {start: b.done}` sits on
+    a line the writer can find, and the example graph ships one."""
+    (tmp_path / "n.yaml").write_text(
+        "id: a\nstatus: not_started\ngates: {start: b.done}\n"
+    )
+    assert load_graph(tmp_path).get("a").gates == (("start", "b.done"),)
+
+
 def test_invalid_status_rejected():
     with pytest.raises(ModelError, match="status"):
         node_from_dict({"id": "a", "status": "shipped"})

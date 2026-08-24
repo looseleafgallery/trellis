@@ -131,6 +131,19 @@ def test_a_corroborator_may_not_claim_an_error(project):
     assert "never error" in found[0].message
 
 
+def test_the_clamp_does_not_double_its_full_stop(project):
+    """The detail is another diagnostic here, and it ends in a full stop of its
+    own: "only the kernel can establish.. This is silence, not agreement"."""
+    declare(
+        project,
+        "linear",
+        "import json\n"
+        "print(json.dumps([{'node': 'a', 'severity': 'error', 'message': 'x'}]))\n",
+    )
+    found = corroborate.gather(project, {})
+    assert "only the kernel can establish. This is silence" in found[0].message
+
+
 # -- failing is a finding, never a silence -----------------------------------
 
 

@@ -282,6 +282,32 @@ expensive to break.
   rendering as an empty column and a stray colon. A count across the whole tree
   is a real finding, not a finding missing its node, and the kernel already
   labels its own graph-level findings this way.
+- **A node written in YAML flow style is refused at load**, naming the file and
+  the line. `{id: a, status: done}` loaded, validated and evaluated perfectly,
+  and every write against it failed: the writer rewrites one field's line, and
+  a node inside `{...}` has no line of its own. The failure was safe - exit 2,
+  nothing written, file untouched - but it arrived at `set` or `accept`, after
+  the person had already decided, and flow style is what anything dumping a
+  dict emits by default. A graph bootstrapped programmatically therefore read
+  perfectly and was permanently read-only, discovered on the first write.
+  Teaching the writer to edit flow style is the larger answer and was
+  deliberately not taken. Only the node's own mapping is judged: a flow value
+  inside a block node, like `evidence: {how: verified, at: 2026-08-20}`, still
+  loads and still writes, and the shipped example uses one.
+
+  **This refuses a graph that previously loaded, and the refusal is total.**
+  Before, a flow-style graph loaded and could be read: `check`, `explain` and
+  `reconcile` all worked, and only `set` and `accept` failed. After, none of
+  them work - `load_graph` refuses first, so every command exits 2 and a
+  flow-style graph cannot be inspected at all until it is rewritten in block
+  style. That is a capability removal and not only a fix, and it is the part
+  to know before upgrading. It is taken deliberately: the node could never be
+  written to, and failing at the door with the file and the line named beats
+  failing at `set` after the person has already decided. Nothing migrates an
+  existing graph; the diagnostic names the line and the edit is the author's.
+- The corroborator severity clamp emitted a double full stop - "which only the
+  kernel can establish.. This is silence, not agreement" - because the detail
+  it quotes is itself a diagnostic that ends in one.
 - `pip install -e '.[dev]'` now installs `ruff`, so the second of the two
   commands CONTRIBUTING and CLAUDE.md give you can actually be run. It was in
   no dependency list, so the documented lint step was `No such file or

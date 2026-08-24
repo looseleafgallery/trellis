@@ -1380,6 +1380,45 @@ def test_force_still_overrides(tmp_path, capsys):
     )
 
 
+# -- flow style is refused at load, not at the write -------------------------
+
+
+@pytest.fixture
+def flow_style(tmp_path):
+    """The reported graph: it checks clean, and every write against it fails."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - {id: a, title: A, status: done}\n"
+        "  - {id: z, title: Z, status: not_started, gates: {start: a.done}}\n"
+    )
+    return graph_dir
+
+
+def test_check_names_the_file_and_line_of_a_flow_style_node(flow_style, capsys):
+    code = cli.main(["--graph", str(flow_style), "check"])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "g.yaml:2" in err
+    assert "flow style" in err
+
+
+def test_a_write_to_a_flow_style_node_fails_before_it_is_previewed(flow_style, capsys):
+    """It failed after the preview, which put the report at the end of the HITL
+    flow - `accept`, with the decision already made. Nothing was written then
+    either; the change is where it is said."""
+    original = (flow_style / "g.yaml").read_text()
+    code = cli.main(
+        ["--graph", str(flow_style), "set", "a", "status=in_progress", "-y"]
+    )
+    assert code == 2
+    assert (flow_style / "g.yaml").read_text() == original
+    captured = capsys.readouterr()
+    assert "proposed:" not in captured.out
+    assert "flow style" in captured.err
+
+
 # -- a `#` inside a value is not a comment -----------------------------------
 
 

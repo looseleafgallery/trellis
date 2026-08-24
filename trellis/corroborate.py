@@ -155,6 +155,9 @@ def run(
 
 def _could_not_run(name: str, detail: str) -> Finding:
     """A corroborator that did not run has told you nothing, not that all is well."""
+    # The detail is often another diagnostic, which ends in a full stop of its
+    # own: "only the kernel can establish.. This is silence, not agreement".
+    detail = detail.strip().removesuffix(".")
     return Finding(
         node=GRAPH_LEVEL,
         code=f"{name}:did_not_run",
