@@ -290,6 +290,42 @@ def test_acknowledgements_reach_a_consumer_with_their_reasons(workspace, capsys)
         assert set(row) == {"node", "code", "at", "why"}
 
 
+def test_a_reason_declared_on_the_node_reaches_a_consumer_too(workspace, capsys):
+    """Same payload key either way. A client cannot be asked to know which of
+    two files the reason happened to be written in."""
+    from trellis import cli
+
+    (workspace / "solo.yaml").write_text(
+        "nodes:\n"
+        "  - id: solo\n"
+        "    title: Solo\n"
+        "    status: not_started\n"
+        "    acknowledge:\n"
+        "      - code: inert_node\n"
+        "        why: spike only, nothing gates on it\n"
+    )
+    cli.main(
+        [
+            "--graph",
+            str(workspace),
+            "set",
+            "solo",
+            "title=Solo work",
+            "-y",
+            "--because",
+            "seed",
+        ]
+    )
+    payload = _payload(workspace)
+    rows = [
+        r
+        for r in payload["acknowledgements"]
+        if r["node"] == "solo" and r["code"] == "inert_node"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["why"] == "spike only, nothing gates on it"
+
+
 def test_the_manual_is_installed_beside_the_code(workspace, capsys):
     """An agent in someone else's repo has the package and not this repository.
 

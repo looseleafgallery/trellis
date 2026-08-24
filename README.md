@@ -619,6 +619,26 @@ status: in_progress
 acknowledge: [inert_node]
 ```
 
+`check` reports each acknowledgement with the reason it was made, and says `no
+reason recorded` where there is none — without it the entry says only that
+somebody once decided something. `review` asks for the reason and journals it.
+Where the graph is written by something that cannot be asked a question — a
+script, an agent, an export — declare the reason beside the code instead:
+
+```yaml
+id: spike
+status: in_progress
+acknowledge:
+  - code: inert_node
+    why: spike only, one ticket, nothing gates on it yet
+```
+
+Both forms mean the same thing, can be mixed in one list, and silence the same
+finding; the second one also records why. Where a node and the journal both
+have a reason the node's is shown, because it is the current statement and is
+editable in place. Declaring it also means the reason survives a lost journal,
+which the acknowledgement itself already did.
+
 Acknowledged findings are **counted, not hidden** — `check` reports `2
 acknowledged and not shown`, because an acknowledgement you cannot see is
 indistinguishable from a bug. If an acknowledged finding stops firing, that is

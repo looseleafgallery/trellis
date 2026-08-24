@@ -659,11 +659,102 @@ def test_acknowledge_accepts_a_bare_string():
     assert node.acknowledges("inert_node")
 
 
+def test_acknowledge_accepts_a_reason_beside_the_code():
+    """The only place a writer with no terminal can put one."""
+    node = node_from_dict(
+        {
+            "id": "a",
+            "status": "in_progress",
+            "acknowledge": [{"code": "inert_node", "why": "spike only, one ticket"}],
+        }
+    )
+    assert node.acknowledges("inert_node")
+    assert node.acknowledged_why("inert_node") == "spike only, one ticket"
+
+
+def test_a_reasoned_acknowledgement_still_silences_the_finding():
+    """The two forms differ in what they record, never in what they do."""
+    graph = build(
+        {
+            "id": "spike",
+            "status": "in_progress",
+            "acknowledge": [{"code": "inert_node", "why": "nothing gates on it"}],
+        },
+    )
+    codes = [p.code for p in queries.check(graph)]
+    assert "inert_node" not in codes
+    _kept, muted = queries.check_with_muted(graph)
+    assert muted == 1
+
+
+def test_the_two_acknowledge_forms_mix_in_one_list():
+    """Additive: adding a reason to one entry cannot disturb the others."""
+    node = node_from_dict(
+        {
+            "id": "a",
+            "status": "in_progress",
+            "acknowledge": ["unowned_node", {"code": "inert_node", "why": "a spike"}],
+        }
+    )
+    assert node.acknowledges("unowned_node") and node.acknowledges("inert_node")
+    assert node.acknowledged_why("inert_node") == "a spike"
+    # Absent is not blank-with-a-reason: the file simply does not say.
+    assert node.acknowledged_why("unowned_node") == ""
+
+
+def test_an_acknowledge_entry_needs_a_code():
+    """A reason attached to nothing silences nothing, and would do it quietly."""
+    with pytest.raises(ModelError, match="needs a `code`"):
+        node_from_dict(
+            {"id": "a", "status": "done", "acknowledge": [{"why": "because"}]}
+        )
+
+
+def test_an_acknowledge_entry_refuses_a_key_it_does_not_know():
+    """`reason:` parses as an entry with no reason, which is the silent failure."""
+    with pytest.raises(ModelError, match="unknown key"):
+        node_from_dict(
+            {
+                "id": "a",
+                "status": "done",
+                "acknowledge": [{"code": "inert_node", "reason": "mistyped"}],
+            }
+        )
+
+
 def test_acknowledge_does_not_change_the_fingerprint():
     """It changes what is reported, never what is computed."""
     plain = node_from_dict({"id": "a", "status": "done"})
     acked = node_from_dict({"id": "a", "status": "done", "acknowledge": ["inert_node"]})
     assert plain.fingerprint() == acked.fingerprint()
+
+
+def test_a_reason_does_not_change_the_fingerprint_either():
+    """Prose about a finding cannot reach a derived value; nobody would write
+    one if annotating dropped every cache entry."""
+    bare = node_from_dict({"id": "a", "status": "done", "acknowledge": ["inert_node"]})
+    reasoned = node_from_dict(
+        {
+            "id": "a",
+            "status": "done",
+            "acknowledge": [{"code": "inert_node", "why": "a spike"}],
+        }
+    )
+    assert bare.fingerprint() == reasoned.fingerprint()
+
+
+def test_an_overlay_carries_the_reasons_through():
+    """The preview is the thing that gets applied. A round-trip that dropped
+    them would render `no reason recorded` for a node that records one."""
+    graph = build(
+        {
+            "id": "a",
+            "status": "not_started",
+            "acknowledge": [{"code": "inert_node", "why": "a spike"}],
+        },
+    )
+    after = graph.with_overlay({"a": {"status": "done"}})
+    assert after.get("a").acknowledged_why("inert_node") == "a spike"
 
 
 # -- slices: what is this holding up, and what does it look like -------------

@@ -120,7 +120,7 @@ def capture(graph_dir: str | Path, engine: Engine, message: str = "") -> dict:
                 "why": why,
             }
             for (node, code), (at, why) in sorted(
-                journal.acknowledgements(graph_dir).items()
+                journal.acknowledgements(graph_dir, graph).items()
             )
             if node in graph and code in graph.get(node).acknowledge
         ],

@@ -11,6 +11,28 @@ expensive to break.
 
 ### Added
 
+- **An acknowledgement can carry its reason in the graph.** `acknowledge` now
+  takes `{code, why}` entries as well as bare codes, and the two can be mixed
+  in one list:
+
+  ```yaml
+  acknowledge:
+    - code: inert_node
+      why: spike only, one ticket, nothing gates on it yet
+  ```
+
+  Schema change, additive: every graph that parsed before parses the same way,
+  and both forms silence the same finding. Until now the reason could only be
+  written by `review`, which is interactive, while the acknowledgement itself
+  lived in the YAML - so `check` asked for something a graph maintained by
+  automation had no way to give it, and the diagnostic would have stayed on
+  those nodes permanently. Splitting a record from its reason across two files
+  is what created the gap; the reason now sits next to the thing it explains,
+  and survives the journal being lost. Where both hold one, the declared
+  reason is shown - it is the current statement, and editable in place.
+  `review` will not append to a list that carries reasons, and says so rather
+  than splitting one on the commas inside it.
+
 - `Graph.structure_hash()` - a content address of the graph's *shape*, so a
   negative result can expire by content rather than by calendar. An edge exists
   only because an expression names a node, so only a node appearing, a gate

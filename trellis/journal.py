@@ -284,7 +284,9 @@ def last_checked(graph_dir: str | Path) -> str:
     return recorded[-1].at if recorded else ""
 
 
-def acknowledgements(graph_dir: str | Path) -> dict[tuple[str, str], tuple[str, str]]:
+def acknowledgements(
+    graph_dir: str | Path, graph: Graph | None = None
+) -> dict[tuple[str, str], tuple[str, str]]:
     """(node, code) -> (when, why), for every acknowledgement on record.
 
     The reason is written at the one moment it is cheap - the moment of
@@ -295,6 +297,15 @@ def acknowledgements(graph_dir: str | Path) -> dict[tuple[str, str], tuple[str, 
     Derived from the write itself rather than the entry text: the codes added
     are `after` minus `before`, which cannot drift the way a parsed sentence
     can.
+
+    Two places can hold a reason, so this reads both. `review` journals one at
+    the moment of deciding; the node may declare one in `acknowledge: [{code,
+    why}]`. Pass the graph to include the declared ones - without it this
+    reports only what the journal saw, which is nothing at all for a graph
+    written by anything that cannot be asked a question. The declaration wins
+    where both exist: it is the current statement, editable in place, while the
+    entry is a record of a past event. The date still comes from the journal,
+    because that is the only thing that knows when the decision was made.
     """
     out: dict[tuple[str, str], tuple[str, str]] = {}
     for entry in read(graph_dir):
@@ -309,6 +320,14 @@ def acknowledgements(graph_dir: str | Path) -> dict[tuple[str, str], tuple[str, 
                     entry.get("at", ""),
                     entry.get("reason") or "",
                 )
+    if graph is not None:
+        for node in graph.nodes.values():
+            for code in node.acknowledge:
+                why = node.acknowledged_why(code)
+                if not why:
+                    continue
+                at, _ = out.get((node.id, code), ("", ""))
+                out[(node.id, code)] = (at, why)
     return out
 
 
