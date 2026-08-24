@@ -249,3 +249,66 @@ def test_the_packaged_manual_matches_the_one_in_the_repo():
         "Copy AGENTS.md over it in the same commit - the packaged manual is "
         "what agents in other repositories actually read."
     )
+
+
+def test_the_installer_uninstall_line_names_the_distribution():
+    """uv knows the tool by the distribution name, not by the command name.
+
+    The command, the import and the tool are all `trellis`; the distribution is
+    `trellis-kernel`. So the uninstall line the installer prints has to name the
+    latter - `uv tool uninstall trellis` exits 2 with "`trellis` is not
+    installed", which is a confusing way to find out. TRE-6 may rename the
+    distribution, and this is the test that says install.sh is one of the places
+    that has to change with it.
+    """
+    import tomllib
+
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    distribution = pyproject["project"]["name"]
+
+    script = (ROOT / "install.sh").read_text()
+    assert f"uv tool uninstall {distribution}" in script, (
+        f"install.sh does not print `uv tool uninstall {distribution}`; "
+        "uv resolves tools by distribution name, so any other name errors"
+    )
+
+
+def test_the_installer_is_posix_sh_because_the_published_line_pipes_to_sh():
+    """`curl ... | sh` runs under whatever /bin/sh is, which is often not bash."""
+    script = (ROOT / "install.sh").read_text()
+    assert script.startswith("#!/bin/sh\n"), (
+        "install.sh must declare #!/bin/sh: the documented one-liner pipes it "
+        "to `sh`, so a bash shebang would be a lie about what it may use"
+    )
+    assert "#!/bin/bash" not in script
+    assert "#!/usr/bin/env bash" not in script
+
+
+def test_the_readme_documents_the_installer_that_exists():
+    """A documented flag that the script does not parse is an error report.
+
+    The README is the manual, and the installer is reached by copying a line out
+    of it. A URL or flag that has drifted from install.sh fails in the reader's
+    terminal rather than here.
+    """
+    readme = (ROOT / "README.md").read_text()
+    script = (ROOT / "install.sh").read_text()
+
+    url = "https://raw.githubusercontent.com/looseleafgallery/trellis/main/install.sh"
+    assert url in readme, "the README no longer gives the one-line install"
+
+    # Every long option the README shows being passed to the installer has to be
+    # one install.sh actually accepts.
+    documented = set(re.findall(rf"{re.escape(url)}[^\n]*?(--[a-z][a-z-]*)", readme))
+    assert documented, "the README shows no installer options"
+    for option in sorted(documented):
+        assert f"{option})" in script, (
+            f"README passes {option} to install.sh, which does not parse it"
+        )
+
+
+def test_the_installer_offers_the_same_git_url_the_readme_does():
+    """One URL, so a fork or a rename cannot fix half of the install paths."""
+    url = "git+https://github.com/looseleafgallery/trellis.git"
+    assert url in (ROOT / "install.sh").read_text()
+    assert url in (ROOT / "README.md").read_text()
