@@ -23,6 +23,13 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["trellis*"]
 
+# The operating manual ships with the package. An agent working in someone
+# else's repo has `trellis` installed and no copy of this repository, so
+# without this the only way to learn the grammar is to go and read the source
+# of a project you are not working on. See `trellis brief`.
+[tool.setuptools.package-data]
+trellis = ["manual.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

@@ -1437,10 +1437,12 @@ def _review_one(
             continue
 
         if answer in ("a", "acknowledge") and problem.severity != "error":
-            try:
-                reason = input("  why? (enter to skip) ").strip() or None
-            except EOFError:
-                reason = None
+            reason = _ask_reason()
+            if reason is None:
+                # No reason means no acknowledgement. The finding is left
+                # exactly as it was rather than answered with a blank.
+                print("  left open")
+                continue
             try:
                 write = edit.acknowledge(graph_dir, graph, problem.node, problem.code)
             except edit.EditError as exc:
@@ -1469,6 +1471,34 @@ def _review_one(
             return "fixed" if code == 0 else "skip"
 
         print("  not one of the options")
+
+
+def _ask_reason(prompt: str = "  why?") -> str | None:
+    """Insist on a reason, and say what a good one is.
+
+    Blank has too many readings - obvious, unknown, in a hurry, disagreed but
+    moved on - so a reader has to guess which, and guessing is the failure the
+    journal exists to prevent. `reject` already refuses without one.
+
+    The hint matters as much as the requirement. Asked bare, `why?` produces
+    labels: the first real session recorded five reasons of two words each and
+    none meant what it appeared to. Naming the test at the point of use is the
+    difference between a reason and a tag.
+    """
+    print(f"{prompt} the fact that makes this permanently true")
+    while True:
+        try:
+            answer = input("  > ").strip()
+        except EOFError:
+            return None
+        if answer:
+            return answer
+        print("  a reason is required - or [s] to leave the finding open")
+        try:
+            if input("  > ").strip().lower() in ("s", "skip"):
+                return None
+        except EOFError:
+            return None
 
 
 def _print_acknowledged(graph, graph_dir) -> None:
@@ -1581,10 +1611,10 @@ def _acknowledge_all(graph_dir, graph, findings, tally: dict) -> str:
     would make a person type the same sentence three times, and what gets typed
     the third time is not worth journaling.
     """
-    try:
-        reason = input("  why? (enter to skip) ").strip() or None
-    except EOFError:
-        reason = None
+    reason = _ask_reason()
+    if reason is None:
+        print("  left open")
+        return "skip"
 
     done = 0
     for problem in findings:
@@ -2109,6 +2139,57 @@ def cmd_deps(args) -> int:
     return 0
 
 
+def cmd_brief(args) -> int:
+    """The operating manual, plus what this particular graph looks like.
+
+    An agent working in someone else's repository has `trellis` installed and
+    no copy of the trellis source. Without this, learning the grammar means
+    going and reading a project you are not working on - which is what
+    actually happened the first time this was used elsewhere.
+
+    The live header comes first on purpose. The manual is long and identical
+    everywhere; the three lines above it are the only part specific to the
+    graph in front of you, and they decide whether the rest is even relevant.
+    """
+    manual = Path(__file__).with_name("manual.md")
+    if not manual.exists():  # pragma: no cover - only if packaging breaks
+        print(
+            "error: the packaged manual is missing; this install is incomplete",
+            file=sys.stderr,
+        )
+        return 2
+
+    if not args.manual_only:
+        try:
+            graph, cache, graph_dir = _load(args)
+            engine = Engine(graph, cache)
+            problems, muted = queries.check_with_muted(graph, engine, graph_dir)
+            cache.save()
+            ready = [
+                d.id for d in engine.all_derived().values() if d.readiness == "ready"
+            ]
+            errors = sum(1 for p in problems if p.severity == "error")
+            print("# This graph, right now\n")
+            print(f"- {len(graph)} nodes at {graph_dir}")
+            print(
+                f"- {_count(len(problems), 'finding')}, {errors} error(s)"
+                f"{f', {muted} acknowledged' if muted else ''}"
+            )
+            print(f"- ready to pick up: {', '.join(ready) if ready else 'nothing'}")
+            print(
+                "\nRun `trellis check` for the findings and `trellis explain "
+                "<node>` for any one of them.\n\n---\n"
+            )
+        except (ModelError, FileNotFoundError, CycleError) as exc:
+            # A brief is most useful on a graph that will not load - that is
+            # when someone most needs the manual - so this reports and carries
+            # on rather than failing.
+            print(f"# This graph, right now\n\n- will not load: {exc}\n\n---\n")
+
+    print(manual.read_text())
+    return 0
+
+
 def cmd_stats(args) -> int:
     graph, cache, graph_dir = _load(args)
     engine = Engine(graph, cache)
@@ -2385,6 +2466,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-y", "--yes", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("-n", "--dry-run", action="store_true", help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_review)
+
+    p = sub.add_parser(
+        "brief", help="the operating manual, for an agent new to this graph"
+    )
+    p.add_argument(
+        "--manual-only",
+        action="store_true",
+        help="skip the summary of this graph and print only the manual",
+    )
+    p.set_defaults(func=cmd_brief)
 
     p = sub.add_parser("stats", help="cache and recomputation counters")
     p.set_defaults(func=cmd_stats)

@@ -931,7 +931,7 @@ def test_review_reloads_after_a_change(tmp_path, answers):
         "  - id: p.one\n    title: One\n    parent: p\n    status: in_progress\n"
         "  - id: p.two\n    title: Two\n    parent: p\n    status: in_progress\n"
     )
-    answers("a", "", "a", "", "q")
+    answers("a", "leaf work, nothing waits on it", "a", "same", "q")
 
     cli.main(["--graph", str(graph_dir), "review"])
     reloaded = load_graph(graph_dir)
@@ -1632,3 +1632,42 @@ def test_an_acknowledgement_with_no_reason_says_so(tmp_path, capsys):
     )
     cli.main(["--graph", str(graph_dir), "check"])
     assert "no reason recorded" in capsys.readouterr().out
+
+
+def test_acknowledging_without_a_reason_leaves_the_finding_open(
+    tmp_path, answers, capsys
+):
+    """Blank has too many readings - obvious, unknown, in a hurry, disagreed
+    but moved on - and a reader has to guess which.
+
+    `reject` already refuses without one; an acknowledgement is permanent and
+    a rejection is not, so the argument is stronger here.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n  - id: solo\n    title: Solo\n    status: not_started\n"
+    )
+    # blank, then confirm skipping rather than supplying one
+    answers("a", "", "s", "q")
+    cli.main(["--graph", str(graph_dir), "review"])
+
+    assert not load_graph(graph_dir).get("solo").acknowledge, "nothing was written"
+    out = capsys.readouterr().out
+    assert "a reason is required" in out
+    assert "left open" in out
+
+
+def test_the_prompt_says_what_a_good_reason_is(tmp_path, answers, capsys):
+    """Asked bare, `why?` produces labels: the first real session recorded five
+    reasons of two words each and none meant what it appeared to."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n  - id: solo\n    title: Solo\n    status: not_started\n"
+    )
+    answers("a", "terminal leaf; nothing will ever gate on it", "q")
+    cli.main(["--graph", str(graph_dir), "review"])
+
+    assert "the fact that makes this permanently true" in capsys.readouterr().out
+    assert load_graph(graph_dir).get("solo").acknowledges("inert_node")
