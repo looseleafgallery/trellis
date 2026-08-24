@@ -176,6 +176,13 @@ class Node:
     # will never change is noise on the second run, and noise is how a whole
     # severity gets ignored. Acknowledged findings are counted, never hidden.
     acknowledge: tuple[str, ...] = ()
+    # Why each of those was answered, as sorted `(code, why)` pairs, for the
+    # ones the file gives a reason for. The reason is the whole value of the
+    # record — without it an acknowledgement says only that somebody once
+    # decided something — and until now the only place to put one was the
+    # journal, written by `review`, which is interactive. A graph maintained
+    # by automation therefore had no way to record one at all.
+    acknowledge_why: tuple[tuple[str, str], ...] = ()
     notes: str = ""
     # Where this came from. Deliberately excluded from the fingerprint.
     source: str = ""
@@ -198,11 +205,22 @@ class Node:
     def acknowledges(self, code: str) -> bool:
         return code in self.acknowledge
 
+    def acknowledged_why(self, code: str) -> str:
+        """The reason declared on the node, or `""` if the file gives none.
+
+        Empty means the file does not say — never that there is no reason.
+        The journal may still hold one, so a caller wanting the full picture
+        merges both; `journal.acknowledgements` is where that happens.
+        """
+        return dict(self.acknowledge_why).get(code, "")
+
     def fingerprint(self) -> str:
         """Hash of the semantic declared fields.
 
         Excludes `title`, `ref`, `notes`, `source`, `evidence`, and
-        `acknowledge`: none of them can change a derived value. Provenance in
+        `acknowledge` with its reasons: none of them can change a derived
+        value — an acknowledgement changes what is *reported*, and the reason
+        for one changes only how that report reads. Provenance in
         particular affects only how a result is *reported*, so annotating an
         edge must not invalidate a cache entry — otherwise nobody would
         annotate anything.
@@ -381,7 +399,36 @@ def node_from_dict(data: dict, source: str = "") -> Node:
         raw_ack = [raw_ack]
     if not isinstance(raw_ack, list):
         raise ModelError(f"{node_id}: `acknowledge` must be a list of finding codes")
-    acknowledge = tuple(sorted(str(a) for a in raw_ack))
+    ack_codes: list[str] = []
+    ack_why: dict[str, str] = {}
+    for item in raw_ack:
+        # Two shapes, both meaning the same acknowledgement. A bare code is the
+        # whole record when the reason lives elsewhere or nowhere; `{code, why}`
+        # puts the reason beside the thing it explains, which is the only place
+        # a writer with no terminal can put one — and the only one that survives
+        # the journal being lost.
+        if not isinstance(item, dict):
+            ack_codes.append(str(item))
+            continue
+        unknown_ack = set(item) - {"code", "why"}
+        if unknown_ack:
+            raise ModelError(
+                f"{node_id}: unknown key(s) in an `acknowledge` entry: "
+                f"{', '.join(sorted(unknown_ack))}"
+            )
+        code = free_text(node_id, "code", item.get("code")).strip()
+        if not code:
+            raise ModelError(f"{node_id}: an `acknowledge` entry needs a `code`")
+        ack_codes.append(code)
+        # A `why` that is absent or blank is not refused: it says exactly what
+        # the bare-string form says, and the loader is not the place to argue
+        # about it. `check` reports the acknowledgement as having no reason,
+        # which is the same complaint from the place that can see it.
+        why = free_text(node_id, "why", item.get("why")).strip()
+        if why:
+            ack_why[code] = why
+    acknowledge = tuple(sorted(ack_codes))
+    acknowledge_why = tuple(sorted(ack_why.items()))
 
     provides = tuple(sorted(str(p) for p in (data.get("provides") or [])))
     satisfied_by = tuple(sorted(str(s) for s in (data.get("satisfied_by") or [])))
@@ -405,6 +452,7 @@ def node_from_dict(data: dict, source: str = "") -> Node:
         publishes=publishes,
         evidence=edge_evidence_t,
         acknowledge=acknowledge,
+        acknowledge_why=acknowledge_why,
         awaiting=free_text(node_id, "awaiting", data.get("awaiting")).strip(),
         # Beyond being one scalar, unvalidated. A tracker id, a URL and a
         # spreadsheet row are all legitimate here, and a schema that guessed
@@ -613,7 +661,15 @@ class Graph:
                     e.target: {"how": e.how, "at": e.at, "by": e.by}
                     for e in base.evidence
                 },
-                "acknowledge": list(base.acknowledge),
+                # Re-emitted in whichever form carries everything the node has:
+                # this round-trips through `node_from_dict`, so a bare list
+                # would drop the reasons on any node the overlay touches.
+                "acknowledge": [
+                    {"code": code, "why": why}
+                    if (why := base.acknowledged_why(code))
+                    else code
+                    for code in base.acknowledge
+                ],
                 "awaiting": base.awaiting,
                 "notes": base.notes,
             }

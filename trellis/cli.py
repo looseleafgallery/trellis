@@ -1508,7 +1508,7 @@ def _print_acknowledged(graph, graph_dir) -> None:
     is why they are counted. A count you cannot explain is barely better - the
     reason is what tells a reader whether the ruling still holds.
     """
-    reasons = journal.acknowledgements(graph_dir)
+    reasons = journal.acknowledgements(graph_dir, graph)
     rows = [
         (node.id, code, reasons.get((node.id, code), ("", "")))
         for node in graph.nodes.values()

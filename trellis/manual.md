@@ -409,6 +409,21 @@ answer it for good on the node rather than re-reading it every run:
 acknowledge: [inert_node]
 ```
 
+`check` will then ask why, because an acknowledgement with no reason says only
+that somebody once decided something. You have no terminal, so `review` cannot
+ask you — say it in the file, beside the code:
+
+```yaml
+acknowledge:
+  - code: inert_node
+    why: spike only, one ticket, nothing gates on it yet
+```
+
+Both forms are accepted and can be mixed in one list. Write the reason the user
+gave you, in their words — not a label, and not your reconstruction of it. If
+you cannot say what makes the finding permanently true, you do not yet have
+the acknowledgement to write.
+
 Acknowledged findings are counted, never hidden, and errors cannot be
 acknowledged at all. **Never acknowledge a finding on the user'"'"'s behalf without
 asking.** Silencing a true objection is the one edit that makes this tool worse

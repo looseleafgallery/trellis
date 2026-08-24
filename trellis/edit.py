@@ -225,9 +225,11 @@ def _append_list_field(
 ) -> list[str]:
     """Add one entry to a flow-style list field, creating it if absent.
 
-    Only flow style (`acknowledge: [a, b]`) is written or rewritten. A block
-    list is refused rather than guessed at — appending to one means deciding
-    where the block ends, and a wrong guess corrupts the node quietly.
+    Only flow style (`acknowledge: [a, b]`) of plain scalars is written or
+    rewritten. A block list is refused rather than guessed at — appending to
+    one means deciding where the block ends, and a wrong guess corrupts the
+    node quietly. Entries that are mappings are refused for the same reason:
+    this splits on commas, and `{code: x, why: "a, b"}` has commas inside it.
     """
     start, end, key_indent = _find_block(lines, node_id)
     pattern = re.compile(r"^(\s*(?:-\s+)?)" + re.escape(field) + r":(.*)$")
@@ -240,6 +242,10 @@ def _append_list_field(
         if not rest.startswith("[") or not rest.endswith("]"):
             raise EditError(
                 f"{node_id}: {field!r} is not a single-line list; add {value!r} by hand"
+            )
+        if "{" in rest:
+            raise EditError(
+                f"{node_id}: {field!r} has entries with reasons; add {value!r} by hand"
             )
         existing = [v.strip() for v in rest[1:-1].split(",") if v.strip()]
         if value in existing:

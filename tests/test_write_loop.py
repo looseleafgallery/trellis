@@ -1022,6 +1022,25 @@ def test_acknowledge_write_refuses_a_block_list(tmp_path):
     assert "- unowned_node" in (graph_dir / "g.yaml").read_text()
 
 
+def test_acknowledge_write_refuses_a_list_that_carries_reasons(tmp_path):
+    """The appender splits on commas, and a reason may contain one.
+
+    Rejoining the pieces would leave valid YAML with the prose silently
+    rewritten - the quiet corruption a block list is already refused for.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    original = (
+        "id: a\nstatus: in_progress\n"
+        'acknowledge: [{code: unowned_node, why: "a spike, and only that"}]\n'
+    )
+    (graph_dir / "g.yaml").write_text(original)
+    graph = load_graph(graph_dir)
+    with pytest.raises(edit.EditError, match="by hand"):
+        edit.acknowledge(graph_dir, graph, "a", "inert_node")
+    assert (graph_dir / "g.yaml").read_text() == original
+
+
 def test_awaiting_is_writable_through_the_loop(workspace):
     cli.main(
         [
@@ -1632,6 +1651,60 @@ def test_an_acknowledgement_with_no_reason_says_so(tmp_path, capsys):
     )
     cli.main(["--graph", str(graph_dir), "check"])
     assert "no reason recorded" in capsys.readouterr().out
+
+
+def test_a_reason_declared_in_the_yaml_answers_that_complaint(tmp_path, capsys):
+    """The whole point: the diagnostic becomes satisfiable without a terminal.
+
+    Nothing here has run `review`, and there is no journal at all - which is
+    the shape of any graph maintained by automation, where the writer is never
+    interactive and the reader never writes.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: solo\n"
+        "    title: Solo\n"
+        "    status: not_started\n"
+        "    acknowledge:\n"
+        "      - code: inert_node\n"
+        "        why: spike only, one ticket, nothing gates on it yet\n"
+    )
+    cli.main(["--graph", str(graph_dir), "check"])
+    out = capsys.readouterr().out
+    assert "why: spike only, one ticket, nothing gates on it yet" in out
+    assert "no reason recorded" not in out
+
+
+def test_a_declared_reason_is_preferred_to_the_journalled_one(
+    tmp_path, answers, capsys
+):
+    """Both can hold one. The file is the current statement and is editable in
+    place; the entry is a record of a past event."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n  - id: solo\n    title: Solo\n    status: not_started\n"
+    )
+    answers("a", "what review was told", "q")
+    cli.main(["--graph", str(graph_dir), "review"])
+    capsys.readouterr()
+
+    # Now say it properly in the file, where the acknowledgement already lives.
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: solo\n"
+        "    title: Solo\n"
+        "    status: not_started\n"
+        "    acknowledge:\n"
+        "      - code: inert_node\n"
+        "        why: what the file says now\n"
+    )
+    cli.main(["--graph", str(graph_dir), "check"])
+    out = capsys.readouterr().out
+    assert "why: what the file says now" in out
+    assert "what review was told" not in out
 
 
 def test_acknowledging_without_a_reason_leaves_the_finding_open(
