@@ -15,7 +15,10 @@ trellis owns exactly this:
 - the **expression language**, and the fact that references in it are the edges
 - **derivation** — readiness, rollups, violations, cycles — as a pure function
   of declared fields plus dependency exports
-- the **fingerprint and cache** discipline that makes derivation exact
+- the **fingerprint and cache** discipline that makes derivation exact, and
+  the **structure hash** that makes a negative result expire exactly: a node's
+  fingerprint answers *did this change*, the structure hash answers *could a
+  relationship have appeared anywhere since I last looked*
 - the **write loop** — validate, preview, confirm, verify, journal — because it
   is what protects everything above
 - **`check`**: the falsifier

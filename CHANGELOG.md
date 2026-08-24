@@ -11,6 +11,16 @@ expensive to break.
 
 ### Added
 
+- `Graph.structure_hash()` - a content address of the graph's *shape*, so a
+  negative result can expire by content rather than by calendar. An edge exists
+  only because an expression names a node, so only a node appearing, a gate
+  changing or a `satisfied_by` changing can create one; statuses, notes and
+  evidence cannot, however much they move. That makes *"I looked for
+  relationships to this and found none"* a durable fact rather than a note that
+  rots: if the hash has not moved, the search still holds by construction.
+  Kernel-level, because it is a pure function of the declaration with no clock
+  in it - the derived-state hash would have expired a search on every status
+  change, for reasons that could not have affected it.
 - `trellis brief` - the operating manual, for an agent starting on a graph it
   did not build. `AGENTS.md` now ships with the package, so an agent working
   in someone else's repository no longer has to go and read the trellis source
