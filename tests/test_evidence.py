@@ -828,6 +828,144 @@ def test_finished_work_is_not_a_chokepoint():
     assert "a" not in [b.node for b in queries.chokepoints(Engine(graph))]
 
 
+# -- edge sensitivity: which edge, if wrong, costs the most ------------------
+
+
+def test_reads_through_counts_the_source_and_everything_behind_it():
+    from trellis.engine import Engine
+
+    # b requires a, c requires b: the edge b -> a is read by b and by c.
+    result = queries.edge_sensitivity(Engine(pipeline()), "b", "a")
+    assert result.reads_through == ["b", "c"]
+
+
+def test_a_leaf_edge_reads_one_not_none():
+    """`1` is the true count - the source's own derivation reads the edge.
+
+    Reporting `0` would be the tool saying nothing depends on it, which is a
+    stronger claim than the one it computed.
+    """
+    from trellis.engine import Engine
+
+    assert queries.edge_sensitivity(Engine(pipeline()), "c", "b").reads_through == ["c"]
+
+
+def test_removing_the_only_requirement_frees_the_source():
+    from trellis.engine import Engine
+
+    result = queries.edge_sensitivity(Engine(pipeline()), "b", "a")
+    assert result.differs == ["b"]
+    assert result.also_dropped == []
+
+
+def test_one_of_two_unmet_requirements_changes_nothing():
+    """d needs a *and* z, so lifting either leaves it blocked on the other.
+
+    This is why the counterfactual cannot carry the ordering on its own: it is
+    zero for most edges, and zero is not "nothing depends on this".
+    """
+    from trellis.engine import Engine
+
+    result = queries.edge_sensitivity(Engine(pipeline()), "d", "a")
+    assert result.differs == []
+    assert result.reads_through == ["d"]
+
+
+def test_the_other_requirement_survives_the_removal():
+    """Removing one edge must not quietly remove the conjunct beside it."""
+    graph = pipeline()
+    after = graph.with_overlay(queries.without_edge(graph, "d", "a"))
+    assert after.get("d").gate("start") == "z.done"
+    assert after.references_of("d") == ("z",)
+
+
+def test_a_contract_edge_is_removed_from_satisfied_by():
+    from trellis.engine import Engine
+
+    graph = build(
+        {"id": "c", "kind": "contract", "status": "agreed", "satisfied_by": ["impl"]},
+        {"id": "impl", "status": "done"},
+        {"id": "user", "status": "not_started", "gates": {"start": "c.live"}},
+    )
+    assert queries.edge_sensitivity(Engine(graph), "c", "impl").differs == ["c", "user"]
+
+
+def test_a_shared_term_is_reported_rather_than_counted_silently():
+    """The count is an upper bound when one term names two nodes. Say which."""
+    from trellis.engine import Engine
+
+    graph = build(
+        {"id": "a", "status": "not_started"},
+        {"id": "b", "status": "not_started"},
+        {
+            "id": "c",
+            "status": "not_started",
+            "gates": {"start": "a.progress + b.progress >= 1.0"},
+        },
+    )
+    result = queries.edge_sensitivity(Engine(graph), "c", "a")
+    assert result.also_dropped == ["b"]
+
+
+def test_an_edge_from_a_published_fact_says_it_was_not_measured():
+    """A published fact is a value, not a requirement, so there is nothing to
+    lift. An unmeasured edge must not arrive looking like a measured zero."""
+    from trellis.engine import Engine
+
+    graph = build(
+        {"id": "a", "status": "not_started"},
+        {"id": "p", "status": "not_started", "publishes": {"ok": "a.done"}},
+    )
+    result = queries.edge_sensitivity(Engine(graph), "p", "a")
+    assert not result.measured
+    assert "published fact ok" in result.unavailable
+    assert result.differs == []
+
+
+def test_an_edge_that_is_not_there_is_refused_not_measured():
+    """A measured zero and an edge nobody ever wrote look identical otherwise,
+    and reporting the second as the first is the mistake this repo keeps
+    finding: a fact about where we looked, dressed as a fact about the graph."""
+    from trellis.engine import Engine
+
+    with pytest.raises(KeyError, match="no such edge"):
+        queries.edge_sensitivity(Engine(pipeline()), "b", "z")
+
+
+def test_edges_are_ranked_by_what_reads_through_them():
+    from trellis.engine import Engine
+
+    graph = pipeline()
+    pairs = [("d", "z"), ("b", "a"), ("c", "b")]
+    ranked = [(e.source, e.target) for e in queries.rank_edges(Engine(graph), pairs)]
+    # b -> a is read by b and c; the other two are read by one node each, and
+    # ties fall to the ids so the walk is the same every time.
+    assert ranked == [("b", "a"), ("c", "b"), ("d", "z")]
+
+
+def test_an_unmeasurable_edge_ranks_last():
+    from trellis.engine import Engine
+
+    graph = build(
+        {"id": "a", "status": "not_started"},
+        {"id": "b", "status": "not_started", "gates": {"start": "a.done"}},
+        {"id": "p", "status": "not_started", "publishes": {"ok": "a.done"}},
+    )
+    ranked = queries.rank_edges(Engine(graph), [("p", "a"), ("b", "a")])
+    assert [(e.source, e.target) for e in ranked] == [("b", "a"), ("p", "a")]
+
+
+def test_the_overlay_is_never_something_the_writer_could_apply():
+    """Research may not loosen execution: the counterfactual rewrites a
+    `gates:` block, and that is exactly what the write path refuses to do."""
+    from trellis.delta import EDITABLE_FIELDS
+
+    graph = pipeline()
+    overlay = queries.without_edge(graph, "b", "a")
+    assert "gates" in overlay["b"]
+    assert "gates" not in EDITABLE_FIELDS
+
+
 def test_mermaid_draws_prerequisite_to_dependent():
     """`b requires a` renders `a --> b`, so the diagram reads as the work flows."""
     from trellis import viz

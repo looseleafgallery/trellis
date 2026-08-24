@@ -6,6 +6,7 @@ rewritten or deleted — both structural edits, both unjournaled, and the wrong
 case usually deletes the evidence of its own failure.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -552,3 +553,143 @@ def test_edges_claiming_nothing_are_not_counted_as_checked(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "nothing to check - 2 verified, 1 stated; none inferred or assumed" in out
     assert "1 of 4 edges carry no `evidence:`, so nothing is claimed about them" in out
+
+
+# -- most load-bearing first --------------------------------------------------
+
+
+# `hub` sits in front of two more nodes; `aside` sits in front of nothing. Both
+# of hub's requirements are unmet, so lifting either one alone changes nothing —
+# which is the case the counterfactual on its own cannot separate.
+GRAPH_UNEVEN = """nodes:
+  - id: base
+    title: Base
+    status: in_progress
+  - id: side
+    title: Side
+    status: not_started
+  - id: aside
+    title: Aside
+    status: not_started
+    gates: {start: side.done}
+    evidence:
+      side: inferred
+  - id: hub
+    title: Hub
+    status: not_started
+    gates: {start: base.done and side.done}
+    evidence:
+      base: inferred
+      side: inferred
+  - id: behind_hub
+    title: Behind hub
+    status: not_started
+    gates: {start: hub.done}
+  - id: last
+    title: Last
+    status: not_started
+    gates: {start: behind_hub.done}
+"""
+
+
+def offered(out: str) -> list[str]:
+    """The edges in the order they were put in front of the person."""
+    return re.findall(r"^\[\d+/\d+\] (\S+ -> \S+)$", out, re.MULTILINE)
+
+
+@pytest.fixture
+def uneven(tmp_path):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(GRAPH_UNEVEN)
+    return graph_dir
+
+
+def test_the_most_depended_on_edge_is_offered_first(uneven, answers, capsys):
+    """The walk used to be alphabetical, which answers "check what first?" by
+    accident. `aside -> side` sorts first by name and last by what rests on it."""
+    answers("s", "s", "s")
+    assert cli.main(["--graph", str(uneven), "reconcile"]) == 0
+
+    out = capsys.readouterr().out
+    assert "most depended on first." in out
+    assert offered(out) == [
+        "hub -> base",
+        "hub -> side",
+        "aside -> side",
+    ]
+
+
+def test_the_count_arrives_with_what_it_counted(uneven, answers, capsys):
+    """A number a person cannot check is a rating. This one lists its own
+    working, so a reader who disagrees can point at which node is wrong."""
+    answers("q")
+    cli.main(["--graph", str(uneven), "reconcile"])
+
+    out = capsys.readouterr().out
+    assert "3 node(s) read through this edge: behind_hub, hub, last" in out
+    # Both of hub's requirements are unmet, so lifting one leaves it blocked.
+    assert "without it, nothing in the graph derives differently" in out
+
+
+def test_an_edge_holding_its_source_back_says_so(uneven, answers, capsys):
+    answers("s", "s", "s")
+    cli.main(["--graph", str(uneven), "reconcile"])
+
+    out = capsys.readouterr().out
+    assert "without it, 1 node(s) derive differently: aside" in out
+
+
+def test_a_stale_verification_stays_behind_the_never_confirmed_one(
+    tmp_path, answers, capsys
+):
+    """Two different questions. An edge nobody ever checked and one checked a
+    while ago are not interchangeable, however much rests on each."""
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: base\n    title: Base\n    status: in_progress\n"
+        "  - id: hub\n    title: Hub\n    status: not_started\n"
+        "    gates: {start: base.done}\n"
+        "    evidence:\n      base: {how: verified, at: '2020-01-01'}\n"
+        "  - id: behind_hub\n    title: Behind\n    status: not_started\n"
+        "    gates: {start: hub.done}\n"
+        "  - id: aside\n    title: Aside\n    status: not_started\n"
+        "    gates: {start: base.done}\n"
+        "    evidence:\n      base: inferred\n"
+    )
+    answers("s", "s")
+    assert cli.main(["--graph", str(graph_dir), "reconcile"]) == 0
+
+    # hub -> base has more behind it, and still comes second: it was checked.
+    assert offered(capsys.readouterr().out) == ["aside -> base", "hub -> base"]
+
+
+def test_a_cycle_costs_the_ordering_not_the_command(tmp_path, answers, capsys):
+    """`reconcile` answered without deriving anything, so it worked on a graph
+    with a cycle - and that is exactly a graph whose edges are worth checking.
+
+    The ordering needs derived state and a cycle has none, so the walk loses
+    the ordering and says which it lost, rather than the command failing.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: a\n    title: A\n    status: not_started\n"
+        "    gates: {start: b.done}\n"
+        "    evidence:\n      b: inferred\n"
+        "  - id: b\n    title: B\n    status: not_started\n"
+        "    gates: {start: a.done}\n"
+        "    evidence:\n      a: inferred\n"
+    )
+    answers("s", "s")
+    assert cli.main(["--graph", str(graph_dir), "reconcile"]) == 0
+
+    out = capsys.readouterr().out
+    assert "not ordered by what depends on each edge" in out
+    assert "dependency cycle" in out
+    assert len(offered(out)) == 2
+    # No count is printed, because none was computed.
+    assert "read through this edge" not in out

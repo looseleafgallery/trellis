@@ -11,6 +11,70 @@ expensive to break.
 
 ### Added
 
+- **`reconcile` walks the unconfirmed edges most load-bearing first.** It
+  walked them in whatever order they came out of the graph, which answers
+  *which edge should I check first* by accident. On the first real graph two of
+  seven unconfirmed edges were wrong and either would have been reached fifth.
+  Each edge is now offered with two counts and the nodes they came from: how
+  many nodes' derivation reads through it, and how many derive differently if
+  it is not real. So the sentence a reader ends up with is *this edge is
+  `inferred`, never confirmed, **and** more depends on it than any other* -
+  which is the pair of facts worth acting on, where either alone is not.
+
+  Counts, not a score, for the same reason `trust` reports counts and never a
+  rate: a fragility of `0.73` cannot be checked, and the derivation is the part
+  that lets someone disagree with it.
+
+  Ordering is by what reads through the edge, with the counterfactual breaking
+  ties, and that way round on evidence rather than by preference. Removing one
+  requirement can free its source and stops there, because a node's status is
+  declared and nothing downstream moves while the source is still not done.
+  Measured over three real graphs, 47 edges came out 38 at zero, 8 at one and 1
+  at two, while what reads through them spread from 1 to 8. The counterfactual
+  is a real signal about one edge and a poor way to order a list of them - on
+  its own it would have left four in five tied, which is the arbitrary order it
+  was meant to replace.
+
+  Stale verifications keep their own group behind the never-confirmed edges and
+  stay oldest-first inside it. An edge nobody has ever checked and one checked a
+  while ago are different questions, and the age ordering is a deliberate answer
+  to the second.
+
+  `reconcile` was the one command that answered without deriving anything, so it
+  worked on a graph with a cycle in it - which is exactly a graph whose edges are
+  worth checking. A cycle now costs the ordering and not the command: the walk
+  says which it lost and carries on.
+
+- `queries.edge_sensitivity()` - what rests on one edge, as `chokepoints` one
+  level down. Removes the edge, re-derives against the same cache, and reports
+  the nodes that derive differently alongside the nodes that read through it.
+  Two numbers rather than one, and the same warning as `blocking`: they answer
+  different questions and quoting the second as the first misreports the graph.
+
+  The removal is expression surgery, exposed as `expr.without_references()`.
+  What comes out is the smallest *boolean term* holding the reference, not the
+  reference itself - `contract.x.version >= 2` asks nothing once `contract.x` is
+  gone, and putting a literal where the reference was would change the question
+  rather than withdraw it. A gate left with no requirement goes with it, an
+  argument to `all_done` goes, and `at_least(2, a.done)` losing `a` becomes no
+  gate rather than `at_least(2)`, which could never open. Where one term names
+  two nodes and cannot lose one alone, the other is reported rather than
+  quietly folded into the count.
+
+  **`gates` is not in `Delta.EDITABLE_FIELDS` and this does not put it there.**
+  The counterfactual rewrites a `gates:` block, which is exactly what the write
+  path refuses to do, and that is the point rather than an obstacle: research
+  may not loosen execution, so the answer is a read-only surface and never an
+  exemption in the write path. `with_overlay` has never carried the writer's
+  restriction and already re-derives correctly from a hypothetical gate. The
+  state it produces is one no write could reach and is never handed to the
+  write loop. See `docs/BOUNDARY.md`.
+
+  An edge the surgery cannot lift - one named by a published fact, which is a
+  value the node computes rather than a requirement it carries - is reported as
+  unmeasured with the fact that named it, and sorts last. A number that was
+  never computed reads as zero unless something says otherwise.
+
 - **An acknowledgement can carry its reason in the graph.** `acknowledge` now
   takes `{code, why}` entries as well as bare codes, and the two can be mixed
   in one list:

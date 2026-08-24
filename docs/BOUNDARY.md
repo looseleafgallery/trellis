@@ -136,6 +136,15 @@ Nothing here loosens the kernel's own rules either: exploration is still pure,
 still time-free, still exact. A research surface that needed the network or the
 clock would not be a research surface, it would be a corroborator.
 
+The first consumer of this is `queries.edge_sensitivity`, which asks what the
+graph derives without one edge and is read by `reconcile` to decide which edge
+to put in front of someone first. It rewrites a `gates:` block through
+`with_overlay`, which is exactly what the write path refuses to do, and
+`EDITABLE_FIELDS` is unchanged — the two restrictions stayed different
+restrictions. It is a query in `queries.py` rather than a fourth interface
+alongside renderers, corroborators and extractors, which is the shape the rest
+of this document asks for: a consumer of the existing read surface.
+
 ## Provenance carries a source, not just a confidence
 
 `how` says an edge was `inferred`. It does not say by whom. Once several

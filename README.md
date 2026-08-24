@@ -211,7 +211,7 @@ owed, never *who* owes it.
 | `trellis history`                         | what has been applied, and why                                        |
 | `trellis drift`                           | what was changed around the tool since it last wrote                  |
 | `trellis trust`                           | challenge the declaration: what is stale, what churns                 |
-| `trellis reconcile`                       | walk the unconfirmed edges; record what held                          |
+| `trellis reconcile`                       | walk the unconfirmed edges, most depended on first                    |
 | `trellis doctor`                          | everything that looks wrong, with what to do about it                 |
 | `trellis review`                          | the same findings, one at a time, with a person deciding              |
 | `trellis snapshot`                        | freeze what the graph means now                                       |
@@ -509,15 +509,34 @@ noticing. This is the green-but-wrong CI check, expressed in the model.
 ```
 $ trellis reconcile
 7 edge(s) to check against the world.
+most depended on first.
 checked 12 before; 2 turned out wrong.
 
 [1/7] agent.emit -> contract.stage_handoff
   (inferred, never confirmed)
+  1 node(s) read through this edge: agent.emit
+  without it, nothing in the graph derives differently
 
   [h] held  [w] wrong  [s] skip  [q] quit
 > w
   why? the D3 in that sentence was the other project's
 ```
+
+**Most load-bearing first**, so the sentence a reader ends up with is *this edge
+is inferred, never confirmed, **and** more depends on it than any other* — the
+pair of facts worth acting on, where either alone is not. The order is by how
+many nodes' derivation reads through the edge, and ties go to how many derive
+differently if it is removed and the graph re-derived. Both are counts that
+arrive with the nodes they counted, so a reader who disagrees can point at
+which one is wrong. Neither is a score: a fragility of `0.73` cannot be argued
+with, and a number nobody can argue with is a number nobody should act on.
+
+The two lines above are the real answer for that edge in `examples/agent-loop`,
+and they are both small — nothing sits behind `agent.emit`, and it is blocked on
+`agent.reflect` as well, so lifting this one requirement moves nothing. That is
+the honest reading and it is worth having: an edge that is wrong and load-bearing
+and an edge that is merely wrong are different problems, and the walk should not
+present them as the same one.
 
 The outcome is **not recoverable afterwards**: a confirmed edge becomes
 `verified` in the YAML, a wrong one gets rewritten or deleted, and the wrong

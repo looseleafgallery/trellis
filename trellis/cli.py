@@ -1956,6 +1956,73 @@ def cmd_snapshot(args) -> int:
     return 0
 
 
+def _weigh_edges(
+    graph: Graph, cache: Cache, claims: list[evidence_mod.EdgeClaim]
+) -> tuple[list[queries.EdgeSensitivity], str]:
+    """How much rests on each candidate edge, or why that could not be asked.
+
+    `reconcile` is the one command here that answered without deriving
+    anything, which meant it worked on a graph with a cycle in it — and a graph
+    with a cycle is exactly one whose edges are worth checking. Ordering must
+    not take that away, so a cycle costs the ordering rather than the command,
+    and the walk says which it lost.
+    """
+    if not claims:
+        return [], ""
+    try:
+        ranked = queries.rank_edges(
+            Engine(graph, cache), [(c.source, c.target) for c in claims]
+        )
+    except CycleError as exc:
+        return [], (
+            f"not ordered by what depends on each edge - {exc}.\n"
+            f"derived state is undefined until that is cut, so this walk is by "
+            f"name only."
+        )
+    return ranked, ""
+
+
+def _listed(ids: list[str], limit: int = 4) -> str:
+    """Ids inline, cut short with a count of what was cut."""
+    if len(ids) <= limit:
+        return ", ".join(ids)
+    return f"{', '.join(ids[:limit])} and {len(ids) - limit} more"
+
+
+def _weight_lines(weight: queries.EdgeSensitivity | None) -> list[str]:
+    """What rests on one edge, as counts with the lists they came from.
+
+    Never a score. "fragility 0.73" cannot be argued with; "four nodes, and
+    here they are" can be read and disagreed with, which is the only kind of
+    number worth putting in front of someone about to make a judgement.
+    """
+    if weight is None:
+        return []
+    if not weight.measured:
+        return [f"how much rests on it was not measured: {weight.unavailable}"]
+
+    lines = [
+        f"{len(weight.reads_through)} node(s) read through this edge: "
+        f"{_listed(weight.reads_through)}"
+    ]
+    if weight.differs:
+        lines.append(
+            f"without it, {len(weight.differs)} node(s) derive differently: "
+            f"{_listed(weight.differs)}"
+        )
+    else:
+        lines.append("without it, nothing in the graph derives differently")
+    if weight.also_dropped:
+        # The counterfactual is wider than one edge, so the count above is an
+        # upper bound. Saying which requirements went with it is the difference
+        # between a number and a number you can check.
+        lines.append(
+            f"(the term naming it also requires "
+            f"{_listed(weight.also_dropped)}, so that went too)"
+        )
+    return lines
+
+
 def cmd_reconcile(args) -> int:
     """Check believed edges against the world, and record what you found.
 
@@ -1964,19 +2031,41 @@ def cmd_reconcile(args) -> int:
     rewritten or deleted, both structural edits, and the wrong case deletes the
     evidence of its own failure. So it is captured here, at the only moment it
     is cheap.
+
+    The unconfirmed edges are walked most load-bearing first. Which edge to
+    check is a question about attention, and an alphabetical walk answers it by
+    accident: on the first real graph two of seven unconfirmed edges were
+    wrong, and either one would have been reached fifth. Ordering by how much
+    of the graph reads through an edge means the sentence a reader ends up with
+    is *this edge is inferred, never confirmed, and more depends on it than any
+    other* — which is the pair of facts worth acting on, where either alone is
+    not.
     """
     graph, cache, graph_dir = _load(args)
     claims = evidence_mod.edges(graph)
     already = journal.reconciled(graph_dir)
 
-    candidates = evidence_mod.unconfirmed(claims)
-    candidates += [
+    unconfirmed = evidence_mod.unconfirmed(claims)
+    seen = {(c.source, c.target) for c in unconfirmed}
+    # Kept as its own group behind the unconfirmed ones, and kept oldest-first
+    # inside it. A stale verification was checked once and a never-confirmed
+    # edge never has been, so the two are not interchangeable, and the age
+    # ordering within them is a deliberate answer to a different question.
+    stale = [
         c
         for c in evidence_mod.stale_verifications(claims, args.stale_after)
-        if (c.source, c.target) not in {(x.source, x.target) for x in candidates}
+        if (c.source, c.target) not in seen
     ]
     if not args.all:
-        candidates = [c for c in candidates if (c.source, c.target) not in already]
+        unconfirmed = [c for c in unconfirmed if (c.source, c.target) not in already]
+        stale = [c for c in stale if (c.source, c.target) not in already]
+
+    ranked, unordered_why = _weigh_edges(graph, cache, unconfirmed + stale)
+    weight = {(e.source, e.target): e for e in ranked}
+    order = {(e.source, e.target): i for i, e in enumerate(ranked)}
+    if order:
+        unconfirmed.sort(key=lambda c: order[(c.source, c.target)])
+    candidates = unconfirmed + stale
 
     checked, wrong = journal.calibration(graph_dir)
     if not candidates:
@@ -2030,6 +2119,14 @@ def cmd_reconcile(args) -> int:
         return 2
 
     print(f"{len(candidates)} edge(s) to check against the world.")
+    if unordered_why and len(candidates) > 1:
+        print(unordered_why)
+    elif len(unconfirmed) > 1:
+        print(
+            "most depended on first; stale verifications after, oldest first."
+            if stale
+            else "most depended on first."
+        )
     if checked:
         print(f"checked {checked} before; {wrong} turned out wrong.")
 
@@ -2043,6 +2140,8 @@ def cmd_reconcile(args) -> int:
             note = f"{claim.how} {claim.at}, {claim.age_days}d ago"
         print(f"\n[{index}/{len(candidates)}] {claim.source} -> {claim.target}")
         print(f"  ({note})")
+        for line in _weight_lines(weight.get((claim.source, claim.target))):
+            print(f"  {line}")
         if prior:
             outcome = "held" if prior.held else "was wrong"
             print(f"  last checked {prior.at[:10]}: {outcome}")

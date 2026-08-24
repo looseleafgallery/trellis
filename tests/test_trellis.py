@@ -56,6 +56,57 @@ def test_unsupported_syntax_rejected():
         expr.evaluate("__import__('os')", lambda _: None)
 
 
+def names(target: str):
+    """A predicate selecting `target` and its exports, as the graph resolves them."""
+    return lambda dotted: dotted == target or dotted.startswith(f"{target}.")
+
+
+@pytest.mark.parametrize(
+    ("source", "target", "expected"),
+    [
+        # The only requirement: nothing is left, and the gate goes with it.
+        ("a.done", "a", None),
+        # One conjunct of several: the rest stands, unchanged.
+        ("a.done and c.done", "a", "c.done"),
+        ("a.done and c.done and d.done", "c", "a.done and d.done"),
+        # A disjunct is an alternative that was never offered.
+        ("a.done or c.done", "a", "c.done"),
+        ("(a.done or b.done) and c.done", "a", "b.done and c.done"),
+        # Both terms naming the node go, including the version pin. Putting a
+        # literal where `a.version` was would change what the gate asks rather
+        # than remove the requirement.
+        (
+            "contract.x.live and contract.x.version >= 2 and b.done",
+            "contract.x",
+            "b.done",
+        ),
+        # `has` takes one subject, so it goes whole rather than losing an argument.
+        ('has(tools.registry, "discovery") and b.done', "tools.registry", "b.done"),
+        # A negated requirement is still a requirement.
+        ("not a.done and b.done", "a", "b.done"),
+        # A count over nodes stays a count over the nodes that remain.
+        ("at_least(2, a.done, b.done, c.done)", "a", "at_least(2, b.done, c.done)"),
+        ("all_done(a, b, c)", "b", "all_done(a, c)"),
+        # `at_least(2)` is not a weaker gate, it is one that can never open.
+        ("at_least(2, a.done)", "a", None),
+        ("all_done(a)", "a", None),
+        # Nothing to do: returned as written, not reformatted.
+        ("b.done  and  c.done", "a", "b.done  and  c.done"),
+    ],
+)
+def test_a_reference_is_removed_with_the_term_that_holds_it(source, target, expected):
+    assert expr.without_references(source, names(target)) == expected
+
+
+def test_a_shared_term_takes_both_references_with_it():
+    """Coarse in one direction, and the caller is expected to say so.
+
+    `a.progress + b.progress` cannot lose `a` alone: there is no value to put
+    in its place that leaves the comparison asking what it asked before.
+    """
+    assert expr.without_references("a.progress + b.progress >= 1.0", names("a")) is None
+
+
 # -- readiness --------------------------------------------------------------
 
 

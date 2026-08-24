@@ -8,6 +8,7 @@ like — and how much of that answer had to be recomputed.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from . import expr as expr_mod
@@ -1056,6 +1057,212 @@ def chokepoints(engine: Engine, limit: int = 10) -> list[Blocking]:
     scored = [b for b in scored if b.unlocks or b.waiting]
     scored.sort(key=lambda b: (-len(b.waiting), -len(b.unlocks), b.node))
     return scored[:limit]
+
+
+@dataclass
+class EdgeSensitivity:
+    """How much of the graph rests on one edge, by both measures.
+
+    `chokepoints` one level down: the same two questions, asked about an edge
+    rather than a node, and the same warning that they are different questions.
+
+    `reads_through` is structural — the source, plus everything that
+    transitively requires it. These are the nodes whose derivation reads the
+    edge, whatever anything currently says. The source is counted because its
+    own derivation reads the edge; a leaf source therefore reads `1` rather
+    than `0`, which is the true number and not a claim that nothing depends
+    on it.
+
+    `differs` is the counterfactual — the nodes that derive differently if the
+    edge is not real, found by removing it and re-deriving. It says whether the
+    edge is holding anything back *right now*.
+
+    **`differs` is close to binary, and that is a property of the model rather
+    than of any graph.** A node's status is declared, so lifting a requirement
+    can make its source ready and stops there: nothing downstream moves,
+    because the source is still not done. Measured over three real graphs, 47
+    edges came out 38 at zero, 8 at one and 1 at two, while `reads_through`
+    spread from 1 to 8. So the delta is a real signal about one edge and a poor
+    way to order a list of them — it leaves four in five tied. Ordering is by
+    `reads_through` first for that reason, with `differs` breaking ties, which
+    is what separates the edges out of one source from each other.
+
+    `also_dropped` is the honesty margin. Removing a reference removes the
+    whole boolean term holding it, so a gate like `a.progress + b.progress >= 1`
+    cannot lose `a` alone. When it is non-empty the counterfactual is wider
+    than one edge and the count is an upper bound.
+
+    `unavailable` is non-empty when the edge could not be removed at all. A
+    number that was never computed reads as zero unless something says
+    otherwise, so nothing says zero here.
+    """
+
+    source: str
+    target: str
+    differs: list[str] = field(default_factory=list)
+    reads_through: list[str] = field(default_factory=list)
+    also_dropped: list[str] = field(default_factory=list)
+    unavailable: str = ""
+
+    @property
+    def measured(self) -> bool:
+        return not self.unavailable
+
+    def as_dict(self) -> dict:
+        return {
+            "source": self.source,
+            "target": self.target,
+            "differs": self.differs,
+            "reads_through": self.reads_through,
+            "also_dropped": self.also_dropped,
+            "unavailable": self.unavailable,
+        }
+
+
+def _selects(graph: Graph, target: str) -> Callable[[str], bool]:
+    """A predicate over dotted references that picks out the ones naming
+    `target`, resolved the same way the edges themselves are."""
+
+    def drop(dotted: str) -> bool:
+        try:
+            resolved, _rest = graph.resolve_ref(dotted)
+        except KeyError:
+            return False  # dangling; `check` reports it, it is not this edge
+        return resolved == target
+
+    return drop
+
+
+def without_edge(graph: Graph, source: str, target: str) -> dict[str, dict]:
+    """The overlay under which `source` no longer names `target`.
+
+    Gate expressions are rewritten as they would read had the edge never been
+    written, and a gate left with no requirement goes. A contract's
+    `satisfied_by` simply loses the entry.
+
+    Read-only by construction, and it must stay that way. `Delta.EDITABLE_FIELDS`
+    is scalars only — rewriting a `gates:` block is YAML surgery, not a state
+    update — and nothing here changes that. `with_overlay` has never had that
+    limit and re-derives correctly from a hypothetical gate, which is the whole
+    point: asking what the graph would derive without an edge is not proposing
+    to write one. See `docs/BOUNDARY.md`, "Research and execution are separate
+    tracks". The state this produces is one no write could reach, and it is
+    never handed to the write loop.
+    """
+    node = graph.get(source)
+    drop = _selects(graph, target)
+
+    gates = {}
+    for name, src in node.gates:
+        kept = expr_mod.without_references(src, drop)
+        if kept is not None:
+            gates[name] = kept
+    changes: dict = {"gates": gates}
+    if node.kind == "contract" and target in node.satisfied_by:
+        changes["satisfied_by"] = [s for s in node.satisfied_by if s != target]
+    return {source: changes}
+
+
+def _why_it_survived(graph: Graph, source: str, target: str) -> str:
+    """Why `target` is still referenced after its terms were removed.
+
+    Says what was checked. The reachable cause is a published fact — its value
+    is a fact the node computes, not a requirement that can be dropped, so
+    there is no expression to rewrite. Anything else is reported as unknown
+    rather than guessed at.
+    """
+    drop = _selects(graph, target)
+    named = sorted(
+        name
+        for name, value in graph.get(source).publishes
+        if isinstance(value, str) and any(drop(d) for d in expr_mod.references(value))
+    )
+    if named:
+        return (
+            f"{target} is named by the published fact "
+            f"{', '.join(named)}, which is a value rather than a requirement"
+        )
+    return f"{target} is still referenced after its gate terms were removed"
+
+
+def edge_sensitivity(engine: Engine, source: str, target: str) -> EdgeSensitivity:
+    """How much rests on one edge: what reads through it, and what would derive
+    differently without it.
+
+    The counterfactual costs one re-derivation, sharing the engine's cache with
+    the real graph, so every node the edge cannot reach is reused rather than
+    recomputed.
+
+    "Derives differently" is readiness or exports, not the whole record.
+    Removing a node's last requirement removes the gate, and a gate that is
+    gone is not a gate whose answer changed — counting that would rank every
+    single-requirement gate above every conjunction for a reason that is about
+    the YAML rather than about the graph.
+    """
+    # An edge that was never there would otherwise come back as a measured
+    # zero, which is the shape of wrong answer this project keeps finding:
+    # a fact about where we looked, reported as a fact about the graph.
+    if target not in engine.graph.references_of(source):
+        raise KeyError(f"{source} does not reference {target} - there is no such edge")
+
+    before = engine.all_derived()
+    reads_through = sorted({source} | _downstream(engine.graph, source))
+
+    after_graph = engine.graph.with_overlay(without_edge(engine.graph, source, target))
+    if target in after_graph.references_of(source):
+        return EdgeSensitivity(
+            source=source,
+            target=target,
+            reads_through=reads_through,
+            unavailable=_why_it_survived(engine.graph, source, target),
+        )
+
+    also_dropped = sorted(
+        set(engine.graph.references_of(source))
+        - set(after_graph.references_of(source))
+        - {target}
+    )
+    after = Engine(after_graph, engine.cache).all_derived()
+    differs = sorted(
+        n
+        for n in before
+        if before[n].readiness != after[n].readiness
+        or before[n].exports_hash != after[n].exports_hash
+    )
+    return EdgeSensitivity(
+        source=source,
+        target=target,
+        differs=differs,
+        reads_through=reads_through,
+        also_dropped=also_dropped,
+    )
+
+
+def rank_edges(engine: Engine, pairs: list[tuple[str, str]]) -> list[EdgeSensitivity]:
+    """`pairs` ordered most load-bearing first.
+
+    Most reading through the edge first, then most derived differently without
+    it, then the ids. Both keys are counts you can check against the lists they
+    came from. The ids at the end make the order total, so the same graph
+    always produces the same walk — which is the whole point of replacing an
+    arbitrary one.
+
+    Edges whose counterfactual could not be measured sort last. An unmeasured
+    edge is not a zero, but it is not evidence of anything either, and putting
+    it first would be the tool asserting what it has just said it cannot
+    compute.
+    """
+    scored = [edge_sensitivity(engine, s, t) for s, t in pairs]
+    scored.sort(
+        key=lambda e: (
+            not e.measured,
+            -len(e.reads_through),
+            -len(e.differs),
+            e.source,
+            e.target,
+        )
+    )
+    return scored
 
 
 def summary(engine: Engine) -> dict:
