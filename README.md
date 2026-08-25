@@ -728,7 +728,7 @@ requires nothing, and the record says its ticket is blocked by another* is the
 other. The second is the one worth writing: a wrong status is one node
 reporting wrong, while a missing edge is wrong readiness everywhere downstream.
 
-Three constraints, each earned rather than chosen:
+Four constraints, each earned rather than chosen:
 
 **A corroborator may report `info` or `warn`, never `error`.** An error means the
 graph cannot be evaluated, and only the kernel can establish that. A
@@ -747,6 +747,12 @@ not told you the graph is fine:
   found. This is silence, not agreement - whatever it would have found is
   unknown.
 ```
+
+**A clean result says what it compared.** `26 rows checked, no conflicts` is not
+a result; `26 rows, status only - relations unchecked` is. Reporting clean
+without naming the scope hides a missing category behind a true number, which is
+how a check that compared only attributes reported no conflicts while an edge the
+record had held for weeks was missing from the graph.
 
 Corroborators and renderers are two of the three interfaces trellis exposes
 without owning what is on the other side; see
