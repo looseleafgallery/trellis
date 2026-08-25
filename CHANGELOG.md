@@ -7,7 +7,18 @@ Until 1.0 the graph schema may change between minor versions. Schema changes
 will always appear here, because a graph you already wrote is the thing most
 expensive to break.
 
+<!-- New entries are collected in here from changelog.d/ when a version is
+     cut. scriv reads no further than the end marker, so the [Unreleased]
+     section below - which predates the fragments and is TRE-6's to resolve -
+     is left alone. -->
+<!-- scriv-insert-here -->
+<!-- scriv-end-here -->
+
 ## [Unreleased]
+
+Entries written since #81 are one file each in [`changelog.d/`](changelog.d/),
+and are folded in above when a version is cut. What follows predates that and
+stays where it is.
 
 ### Added
 
