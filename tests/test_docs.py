@@ -179,6 +179,97 @@ def test_the_changelog_has_an_unreleased_section_with_content():
     assert "- " in unreleased, "the Unreleased section lists nothing"
 
 
+def test_the_fragment_directory_is_the_one_every_document_names():
+    """Three files name where a changelog entry goes; one answer, or none.
+
+    The convention only holds if the place is unambiguous. A contributor who
+    reads CONTRIBUTING and a contributor who reads the pull-request checklist
+    have to arrive at the same directory as the one scriv writes to, and that
+    directory has to exist - scriv refuses to create it.
+    """
+    import tomllib
+
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    configured = pyproject["tool"]["scriv"]["fragment_directory"]
+
+    assert (ROOT / configured).is_dir(), (
+        f"pyproject.toml points scriv at {configured!r}, which does not exist. "
+        "scriv will not create it."
+    )
+    for doc in (ROOT / "CONTRIBUTING.md", ROOT / ".github/pull_request_template.md"):
+        assert configured in doc.read_text(), (
+            f"{doc.name} does not say that an entry goes in {configured!r}"
+        )
+
+
+def test_every_changelog_fragment_carries_a_category_the_changelog_uses():
+    """A fragment is collected verbatim, so a wrong heading lands in the file.
+
+    `scriv create` writes every category commented out and expects one to be
+    uncommented. A fragment committed unedited is silently empty - it survives
+    review looking like an entry and contributes nothing when collected.
+    """
+    import tomllib
+
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    scriv = pyproject["tool"]["scriv"]
+    categories = set(scriv["categories"])
+    fragments = ROOT / scriv["fragment_directory"]
+
+    # scriv's `skip_fragments` default excludes README.*; it is instructions,
+    # not an entry.
+    for fragment in sorted(fragments.glob("*.md")):
+        if fragment.name.startswith("README."):
+            continue
+        text = fragment.read_text()
+        # Only headings outside the comment blocks the template ships with.
+        live = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+        headings = re.findall(r"^### (.+)$", live, flags=re.MULTILINE)
+        assert headings, (
+            f"{fragment.name} has no uncommented category heading - it was "
+            "committed as `scriv create` wrote it, and collects to nothing"
+        )
+        unknown = sorted({h.strip() for h in headings} - categories)
+        assert not unknown, (
+            f"{fragment.name} uses categories the changelog does not: {unknown}"
+        )
+        assert re.search(r"^- ", live, flags=re.MULTILINE), (
+            f"{fragment.name} lists nothing under its heading"
+        )
+
+
+def test_the_changelog_says_where_collected_entries_go():
+    """scriv writes between two markers and reads no further than the second.
+
+    Without them `scriv collect` stops on the first heading it cannot read as a
+    version, which `## [Unreleased]` is not - so the half of this convention
+    that runs at release time would fail the first time anyone tried it.
+    """
+    import tomllib
+
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    level = int(pyproject["tool"]["scriv"]["md_header_level"])
+
+    text = (ROOT / "CHANGELOG.md").read_text()
+    start = text.find("scriv-insert-here")
+    end = text.find("scriv-end-here")
+    assert start != -1, "CHANGELOG.md has no scriv-insert-here marker"
+    assert end != -1, "CHANGELOG.md has no scriv-end-here marker"
+    assert start < end, "the insert marker has to come before the end marker"
+
+    # Everything scriv parses lies between the markers, and it must be able to
+    # read all of it as versions. Leaving [Unreleased] outside is deliberate.
+    assert text.find("## [Unreleased]") > end, (
+        "the [Unreleased] heading is inside scriv's parse window; it is not a "
+        "version and collect will refuse it"
+    )
+    # scriv writes its version headings at this level, so a mismatch would
+    # collect entries in at the wrong depth.
+    assert text.count("\n" + "#" * level + " [Unreleased]") == 1, (
+        f"md_header_level is {level}, which is not the changelog's own level"
+    )
+
+
 def test_the_documented_install_supplies_every_documented_check():
     """`.[dev]` has to install every tool the setup instructions then run.
 

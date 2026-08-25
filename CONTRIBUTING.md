@@ -9,6 +9,29 @@ python3 -m venv .venv
 
 Optionally `pre-commit install` to run the fast checks before each commit.
 
+## Changelog entries go in `changelog.d/`, not in `CHANGELOG.md`
+
+    ./.venv/bin/scriv create --edit
+
+That writes a new file under `changelog.d/` with a name nobody else will pick.
+Keep the one `### Added` (or `Changed`, `Deprecated`, `Removed`, `Fixed`,
+`Security`) heading you need, delete the rest, and write the entry as the
+entries in `CHANGELOG.md` are written: what changed, and why it was worth
+changing. Name the issue inline, as `(#81)`. `scriv collect` folds the
+fragments into `CHANGELOG.md`, grouped under those headings, when a version is
+cut.
+
+Do not edit `CHANGELOG.md` directly. Every pull request that did conflicted
+with every other one that did, because they all appended to the same list, and
+nothing else about them conflicted. A file per change removes the collision
+instead of making it cheaper to resolve - which matters most where the resolve
+is unattended, since two agents appending to one list always collide and two
+agents each writing a distinct file never can. `changelog.d/README.md` has the
+longer version, including why `merge=union` was refused.
+
+Entries written before `changelog.d/` existed stay in `CHANGELOG.md` where
+they are.
+
 ## What this project is careful about
 
 These are the invariants. A change that breaks one needs to argue for it
