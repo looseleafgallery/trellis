@@ -110,7 +110,17 @@ def cmd_check(args) -> int:
     else:
         if not problems:
             tail = f" ({muted} acknowledged)" if muted else ""
-            print(f"ok - {len(graph)} nodes, no problems{tail}")
+            # "no problems" is wider than what this command looks at. It reads
+            # the YAML and nothing else - not git, not the journal, not a
+            # corroborator - so a graph every node of which went stale a month
+            # ago passes it. Name the scope rather than let a true line be
+            # read as a clean bill (#41).
+            print(f"ok - {len(graph)} nodes, no structural problems{tail}")
+            print(
+                "that is the declaration only - gates, references, contracts, "
+                "cycles, rollups.\nstaleness, drift and edge provenance are "
+                "`trellis doctor`."
+            )
             _print_acknowledged(graph, graph_dir)
         else:
             # Already ranked by check(): worst first, then most urgent.
@@ -302,7 +312,22 @@ def cmd_explain(args) -> int:
         if d.kind == "contract":
             print("  contract is live - it gates nothing right now")
         elif gate is None:
-            print(f"  no {args.gate!r} gate declared - nothing gates this node")
+            # It established that *this* gate is absent and concluded that
+            # every gate is. `explain n --gate finish` said "nothing gates this
+            # node" about a node whose `start` gate is declared - and which,
+            # since only the named gate was evaluated, may well be unmet (#41).
+            others = sorted(d.gates)
+            if not others:
+                print(f"  no {args.gate!r} gate declared, and no other gate either")
+            else:
+                named = ", ".join(repr(name) for name in others)
+                print(f"  no {args.gate!r} gate declared - this node has {named}")
+                unmet = [name for name in others if not d.gates[name].satisfied]
+                if unmet:
+                    print(
+                        f"  {', '.join(repr(n) for n in unmet)} is unmet; ask about "
+                        f"it with --gate {unmet[0]}"
+                    )
         else:
             print(f"  gate {args.gate!r} is satisfied")
         return 0
@@ -752,8 +777,24 @@ def cmd_history(args) -> int:
     if args.json:
         _emit(entries, True)
         return 0
+    unreadable = journal.unreadable_lines(graph_dir)
     if not entries:
-        print("no history yet")
+        # "no history yet" named a cause - nothing has happened - for three
+        # different situations, one of which is a journal we cannot read (#41).
+        if not journal.has_journal(graph_dir):
+            print(
+                "no history yet - this graph has no journal.\n"
+                "one appears as soon as a change goes through `set` or `log`."
+            )
+        elif unreadable:
+            print(
+                f"nothing to show - a journal exists and all {unreadable} of its "
+                f"line(s) are unreadable.\n"
+                f"that is history that was recorded, not history that was never "
+                f"written: {journal.journal_path(graph_dir)}"
+            )
+        else:
+            print("no history yet - a journal exists for this graph and is empty.")
         return 0
     for entry in entries:
         print(f"{entry['at']}  [{entry['origin']}]  {entry['text']}")
@@ -769,6 +810,14 @@ def cmd_history(args) -> int:
                 )
         for item in entry.get("unmatched") or []:
             print(f"    ? {item}")
+    if unreadable:
+        # Counted and reported rather than dropped, for the same reason an
+        # acknowledged finding is: a skipped line you cannot see is
+        # indistinguishable from a change nobody ever made.
+        print(
+            f"\n{unreadable} further line(s) in the journal could not be read and "
+            f"are not shown above."
+        )
     return 0
 
 
@@ -844,6 +893,104 @@ def _ago(stamp: str) -> str:
         when = when.replace(tzinfo=UTC)
     days = (datetime.now(UTC) - when).days
     return " (today)" if days == 0 else f" ({days}d ago)"
+
+
+# What a clean line is allowed to claim.
+#
+# `docs/BOUNDARY.md` requires a corroborator's clean result to say what it
+# compared, because "no conflicts across 26 rows" hid a whole unchecked
+# category behind a true number. The kernel's own summaries were exempt from
+# that in practice and should not have been: `doctor` said "nothing looks
+# wrong" on a graph with no git and no journal, where staleness, volatility,
+# corrections and drift had not been checked at all. Absence where we looked,
+# reported as absence, in the tool's own headline (#41).
+def _evidence_scope(
+    graph_dir,
+    evidence: dict[str, evidence_mod.Evidence],
+    claims: list[evidence_mod.EdgeClaim],
+    journal_covers: str,
+) -> tuple[list[str], list[str]]:
+    """What the trust layer examined here, and what it could not.
+
+    Both halves are phrases for a person rather than codes. The second is the
+    one that matters: a check that could not run has found nothing, which is
+    not the same as having found nothing wrong.
+    """
+    checked: list[str] = []
+    unchecked: list[str] = []
+
+    if not evidence:
+        # Nothing was examined, so nothing is claimed. A graph with no nodes
+        # passing every check is the emptiest version of this whole bug.
+        return checked, ["everything: this graph declares no nodes"]
+
+    dated = [e for e in evidence.values() if e.last_change is not None]
+    if len(dated) == len(evidence):
+        source = "the journal" if any(e.source == "journal" for e in dated) else "git"
+        checked.append(
+            f"age and staleness: all {len(evidence)} declaration(s), dated from "
+            f"{source}"
+        )
+    elif dated:
+        checked.append(
+            f"age and staleness: {len(dated)} of {len(evidence)} declaration(s)"
+        )
+        unchecked.append(
+            f"age of the other {len(evidence) - len(dated)}: no commit and no "
+            f"journal entry names them"
+        )
+    else:
+        unchecked.append("age and staleness: no node has a commit or a journal entry")
+
+    # `_band` says nothing below `MIN_SAMPLE`, on purpose - and saying nothing
+    # is exactly what a summary must not read as agreement.
+    counted = [e for e in evidence.values() if e.revisions is not None]
+    if any(e.band != "unknown" for e in evidence.values()):
+        checked.append(
+            f"volatility: {len(counted)} declaration(s), against this graph's "
+            f"own median"
+        )
+    elif not counted:
+        unchecked.append("volatility: no file history to count revisions in")
+    else:
+        unchecked.append(
+            f"volatility: {len(counted)} node(s) have file history; "
+            f"{evidence_mod.MIN_SAMPLE} are needed for a median"
+        )
+
+    if journal.has_journal(graph_dir):
+        checked.append(f"{journal_covers}: from this graph's journal")
+    else:
+        unchecked.append(f"{journal_covers}: this graph has no journal")
+
+    annotated, total = evidence_mod.coverage(claims)
+    if not total:
+        unchecked.append(
+            "edge provenance: no gate references another node, so no edges"
+        )
+    elif not annotated:
+        unchecked.append(f"edge provenance: none of {total} edge(s) carry `evidence:`")
+    else:
+        checked.append(
+            f"edge provenance: {annotated} of {total} edge(s) carry `evidence:`"
+        )
+        if annotated < total:
+            unchecked.append(
+                f"the other {total - annotated} edge(s): no `evidence:` on them"
+            )
+    return checked, unchecked
+
+
+def _print_scope(checked: list[str], unchecked: list[str]) -> None:
+    """Print the two halves of `_evidence_scope` under a clean result."""
+    if checked:
+        print("\nchecked:")
+        for item in checked:
+            print(f"  - {item}")
+    if unchecked:
+        print("\nnot checked here, so nothing is claimed about it:")
+        for item in unchecked:
+            print(f"  - {item}")
 
 
 def cmd_trust(args) -> int:
@@ -976,7 +1123,11 @@ def cmd_trust(args) -> int:
 
     anything = stale or churn or unknown or unconfirmed or aged or corrected or waiting
     if not anything:
-        print("nothing to challenge - every declaration has history and none is stale")
+        # It said "every declaration has history and none is stale", which
+        # named two of the six checks above and claimed the rest by silence.
+        # With no journal and only a handful of files, half of them cannot run.
+        print("\nnothing to challenge in what could be checked here.")
+        _print_scope(*_evidence_scope(graph_dir, evidence, claims, "corrections"))
     else:
         print(
             "\nthese are challenges, not corrections - nothing here changed any state"
@@ -1132,11 +1283,24 @@ def cmd_doctor(args) -> int:
         return 1 if any(f[0] == "error" for f in findings) else 0
 
     if not findings:
-        print(
-            f"nothing looks wrong across {len(graph)} nodes.\n"
-            "that is either a good graph or a graph too small to disagree with - "
-            "if you just bootstrapped it, it is probably the second."
+        # The second sentence used to guess: "either a good graph or a graph
+        # too small to disagree with - probably the second". That is a
+        # plausible cause offered as a finding, and it was standing in for the
+        # answer the tool actually has, which is what it managed to check.
+        print(f"nothing looks wrong across {len(graph)} nodes.")
+        checked, unchecked = _evidence_scope(
+            graph_dir, evidence, claims, "corrections and drift"
         )
+        checked.insert(0, "structure: gates, references, contracts, cycles, rollups")
+        declared = sorted(corroborate.load(graph_dir))
+        if declared:
+            checked.append(f"outside trellis: {', '.join(declared)}")
+        else:
+            unchecked.append(
+                "anything outside trellis: no corroborators are configured"
+            )
+        _print_scope(checked, unchecked)
+        print("\na clean result is only as wide as what it compared.")
         return 0
 
     codes = {p.node + p.message: p.code for p in problems}
@@ -1427,7 +1591,16 @@ def _review_one(
             if reasons:
                 _print_reasons(reasons)
             else:
-                print("  nothing gates this node")
+                # `explain` returns nothing both when there is no gate and
+                # when the gate is met. Those are opposite answers (#41). Same
+                # three cases `cmd_explain` distinguishes, worded the same.
+                d = engine.derived(problem.node)
+                if d.kind == "contract":
+                    print("  contract is live - it gates nothing right now")
+                elif d.gates.get("start") is not None:
+                    print("  its start gate is satisfied - nothing here is unmet")
+                else:
+                    print("  no start gate declared - nothing gates this node")
             continue
 
         if answer in ("e", "edit"):
@@ -1663,7 +1836,10 @@ def cmd_review(args) -> int:
 
     if not problems:
         tail = f" ({muted} acknowledged)" if muted else ""
-        print(f"nothing to review across {len(graph)} nodes{tail}")
+        # Same findings as `check`, so the same scope, and the same reason for
+        # saying so out loud.
+        print(f"nothing structural to review across {len(graph)} nodes{tail}")
+        print("`trellis doctor` also reads git, the journal and any corroborator.")
         return 0
 
     groups = _by_node(problems)
@@ -1752,7 +1928,10 @@ def cmd_blocking(args) -> int:
             _emit([b.as_dict() for b in points], True)
             return 0
         if not points:
-            print("nothing is holding anything up")
+            print(
+                "nothing is holding anything up - no open node has anything "
+                "downstream of it"
+            )
             return 0
         print("holding up the most, open work only:\n")
         for item in points:
@@ -1882,8 +2061,33 @@ def cmd_snapshot(args) -> int:
         if args.json:
             _emit([e.as_dict() for e in entries], True)
             return 0
+        unreadable = snapshot_mod.unreadable_index_lines(graph_dir)
         if not entries:
-            print("no snapshots yet")
+            # "no snapshots yet" answered three questions with one cause. An
+            # index we cannot read, and snapshots on disk that no index names,
+            # are both "we found none where we looked" (#41).
+            orphaned = snapshot_mod.unindexed_dirs(graph_dir)
+            if unreadable:
+                print(
+                    f"no snapshots listed - the index has {unreadable} line(s) and "
+                    f"none of them could be read:\n"
+                    f"  {snapshot_mod.snapshot_dir(graph_dir) / snapshot_mod.INDEX_NAME}"
+                )
+            elif orphaned:
+                print(
+                    f"no snapshot index, but {len(orphaned)} snapshot "
+                    f"director(ies) are on disk:"
+                )
+                for name in orphaned[:5]:
+                    print(f"  {name}")
+                if len(orphaned) > 5:
+                    print(f"  ... and {len(orphaned) - 5} more")
+                print(
+                    "the index is the listing, so nothing here can read them until "
+                    "it is rebuilt."
+                )
+            else:
+                print("no snapshots yet - none has been taken in this graph")
             return 0
         for entry in reversed(entries):  # newest first
             age = entry.age_days()
@@ -1899,6 +2103,11 @@ def cmd_snapshot(args) -> int:
         print(
             f"\n{len(entries)} snapshot(s). these are frozen; nothing refreshes them."
         )
+        if unreadable:
+            print(
+                f"{unreadable} further line(s) in the index could not be read and "
+                f"are not listed above."
+            )
         return 0
 
     if args.renderers:
@@ -2071,7 +2280,9 @@ def cmd_reconcile(args) -> int:
     if not candidates:
         annotated, total = evidence_mod.coverage(claims)
         if not total:
-            print("no edges to check - this graph has no gates yet")
+            # No edges, which is not the same fact as no gates: a gate whose
+            # expression names no other node is a gate and not an edge.
+            print("no edges to check - no gate here references another node")
         elif not annotated:
             print(
                 f"none of {total} edges are annotated, so there is nothing to "
@@ -2293,13 +2504,15 @@ def cmd_brief(args) -> int:
             print("# This graph, right now\n")
             print(f"- {len(graph)} nodes at {graph_dir}")
             print(
-                f"- {_count(len(problems), 'finding')}, {errors} error(s)"
+                f"- {_count(len(problems), 'structural finding')}, "
+                f"{errors} error(s)"
                 f"{f', {muted} acknowledged' if muted else ''}"
             )
             print(f"- ready to pick up: {', '.join(ready) if ready else 'nothing'}")
             print(
-                "\nRun `trellis check` for the findings and `trellis explain "
-                "<node>` for any one of them.\n\n---\n"
+                "\nRun `trellis check` for those and `trellis explain <node>` for "
+                "any one of them.\nRun `trellis doctor` for the rest: it reads git, "
+                "the journal and any corroborator,\nwhich `check` does not.\n\n---\n"
             )
         except (ModelError, FileNotFoundError, CycleError) as exc:
             # A brief is most useful on a graph that will not load - that is

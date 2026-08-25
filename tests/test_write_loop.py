@@ -917,6 +917,30 @@ def test_review_explain_does_not_consume_the_finding(tmp_path, answers, capsys):
     assert out.count("[node 1/") == 1
 
 
+def test_review_explain_distinguishes_no_gate_from_a_met_one(tmp_path, answers, capsys):
+    """`explain` returns nothing for both, and they are opposite answers.
+
+    The loop printed "nothing gates this node" either way, so a node whose
+    gate was declared and satisfied was reported as ungated (#41). Both nodes
+    here carry a finding, so one run walks both cases: `done_one` has no gate,
+    and `gated` has one that is met.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: done_one\n    title: Done\n    status: done\n"
+        "  - id: gated\n    title: Gated\n    status: not_started\n"
+        "    gates: {start: done_one.done}\n"
+    )
+    answers("x", "s", "x", "q")
+
+    cli.main(["--graph", str(graph_dir), "review"])
+    out = capsys.readouterr().out
+    assert "no start gate declared - nothing gates this node" in out
+    assert "its start gate is satisfied - nothing here is unmet" in out
+
+
 def test_review_reloads_after_a_change(tmp_path, answers):
     """A write makes every later finding stale, so the graph is re-read.
 
@@ -993,7 +1017,11 @@ def test_review_reports_nothing_to_do_when_clean(tmp_path, answers, capsys):
     )
     answers()
     assert cli.main(["--graph", str(graph_dir), "review"]) == 0
-    assert "nothing to review" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    # `review` walks the findings `check` produces, so it inherits `check`'s
+    # scope. Saying so is the point: nothing here read git or the journal.
+    assert "nothing structural to review" in out
+    assert "`trellis doctor` also reads git" in out
 
 
 def test_acknowledge_write_appends_to_an_existing_list(tmp_path):
@@ -1378,6 +1406,56 @@ def test_force_still_overrides(tmp_path, capsys):
     assert (
         cli.main(["--graph", str(graph_dir), "graph", "-f", "mermaid", "--force"]) == 0
     )
+
+
+# -- an unreadable journal is not an empty one -------------------------------
+
+
+def test_no_journal_at_all_says_so_and_says_what_makes_one(project, capsys):
+    assert cli.main(["--graph", str(project), "history"]) == 0
+    out = capsys.readouterr().out
+    assert "this graph has no journal" in out
+    assert "`set` or `log`" in out
+
+
+def test_an_unreadable_journal_is_not_reported_as_no_history(project, capsys):
+    """`no history yet` was one cause offered for three situations.
+
+    A journal whose every line is corrupt is history that was recorded and
+    cannot be read. Calling that "no history yet" says the reasons were never
+    written down, which is the opposite of what happened (#41).
+    """
+    path = journal.journal_path(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json\nalso not json\n")
+
+    assert cli.main(["--graph", str(project), "history"]) == 0
+    out = capsys.readouterr().out
+    assert "no history yet" not in out
+    assert "all 2 of its line(s) are unreadable" in out
+    assert str(path) in out
+
+
+def test_skipped_journal_lines_are_counted_rather_than_dropped(project, capsys):
+    """Skipping a corrupt line is right; skipping it in silence is not."""
+    cli.main(["--graph", str(project), "set", "a", "status=done", "-y"])
+    path = journal.journal_path(project)
+    path.write_text(path.read_text() + "{ half an entry\n")
+    capsys.readouterr()
+
+    assert cli.main(["--graph", str(project), "history"]) == 0
+    out = capsys.readouterr().out
+    assert "1 further line(s) in the journal could not be read" in out
+    assert journal.unreadable_lines(project) == 1
+
+
+def test_an_empty_journal_file_is_neither_of_those(project, capsys):
+    path = journal.journal_path(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("")
+
+    assert cli.main(["--graph", str(project), "history"]) == 0
+    assert "a journal exists for this graph and is empty" in capsys.readouterr().out
 
 
 # -- flow style is refused at load, not at the write -------------------------

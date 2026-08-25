@@ -94,10 +94,12 @@ def record(
     return path
 
 
-def _read_one(path: Path) -> list[dict]:
+def _scan_one(path: Path) -> tuple[list[dict], int]:
+    """Entries in one journal file, and how many lines could not be read."""
     if not path.exists():
-        return []
+        return [], 0
     entries: list[dict] = []
+    unreadable = 0
     for line in path.read_text().splitlines():
         line = line.strip()
         if not line:
@@ -105,8 +107,24 @@ def _read_one(path: Path) -> list[dict]:
         try:
             entries.append(json.loads(line))
         except json.JSONDecodeError:
-            continue
-    return entries
+            unreadable += 1
+    return entries, unreadable
+
+
+def _read_one(path: Path) -> list[dict]:
+    return _scan_one(path)[0]
+
+
+def unreadable_lines(graph_dir: str | Path) -> int:
+    """Journal lines that could not be parsed, across every location it lives in.
+
+    `read` skips them so one corrupt line cannot take a whole history down.
+    Skipping *silently* is the other half of that decision and is the wrong
+    half: a reason that was recorded and cannot be read is not the same as one
+    that was never recorded, and only this can tell them apart.
+    """
+    paths = [*legacy_journal_paths(graph_dir), journal_path(graph_dir)]
+    return sum(_scan_one(path)[1] for path in paths)
 
 
 def read(graph_dir: str | Path, limit: int | None = None) -> list[dict]:

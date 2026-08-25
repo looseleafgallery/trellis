@@ -397,4 +397,50 @@ def test_cli_reports_an_unknown_renderer(project, capsys):
 
 def test_cli_list_with_no_snapshots(project, capsys):
     assert cli.main(["--graph", str(project), "snapshot", "--list"]) == 0
-    assert "no snapshots yet" in capsys.readouterr().out
+    assert "no snapshots yet - none has been taken" in capsys.readouterr().out
+
+
+# -- an index we cannot read is not an index with nothing in it ---------------
+#
+# `read_index` skips a malformed line rather than failing, which is right. The
+# listing then said "no snapshots yet" - one cause, offered for three
+# situations, two of which are the opposite of it (#41).
+
+
+def test_an_unreadable_index_is_not_reported_as_no_snapshots(project, capsys):
+    index = snapshot.snapshot_dir(project) / snapshot.INDEX_NAME
+    index.parent.mkdir(parents=True, exist_ok=True)
+    index.write_text("{ not json\nalso not json\n")
+
+    assert cli.main(["--graph", str(project), "snapshot", "--list"]) == 0
+    out = capsys.readouterr().out
+    assert "no snapshots yet" not in out
+    assert "the index has 2 line(s) and none of them could be read" in out
+    assert str(index) in out
+
+
+def test_snapshots_on_disk_with_no_index_are_named(project, capsys):
+    """The index is the listing, so a snapshot missing from it is invisible."""
+    take(project)
+    index = snapshot.snapshot_dir(project) / snapshot.INDEX_NAME
+    taken = [entry.id for entry in snapshot.read_index(project)]
+    index.unlink()
+
+    assert cli.main(["--graph", str(project), "snapshot", "--list"]) == 0
+    out = capsys.readouterr().out
+    assert "no snapshots yet" not in out
+    assert "1 snapshot director(ies) are on disk" in out
+    assert taken[0] in out
+    assert "until it is rebuilt" in out
+
+
+def test_a_skipped_index_line_is_counted_rather_than_dropped(project, capsys):
+    take(project)
+    index = snapshot.snapshot_dir(project) / snapshot.INDEX_NAME
+    index.write_text(index.read_text() + "{ half an entry\n")
+
+    assert cli.main(["--graph", str(project), "snapshot", "--list"]) == 0
+    out = capsys.readouterr().out
+    assert "1 snapshot(s)" in out
+    assert "1 further line(s) in the index could not be read" in out
+    assert snapshot.unreadable_index_lines(project) == 1

@@ -20,15 +20,30 @@ bootstrap that ends with "here is your graph, looks good" has taught the user
 nothing and will not be opened again.
 
 So: you ask the questions, you write the YAML, and then you run `trellis
-doctor` and report what it says. If it says nothing, say that too, and say what
-it means:
+doctor` and report what it says. If it says nothing, say that too — and read
+the scope it prints with it, because most of what "nothing looks wrong" means
+on a fresh graph is that most of the checks had nothing to run against:
 
 ```
 $ trellis doctor
 nothing looks wrong across 6 nodes.
-that is either a good graph or a graph too small to disagree with - if you
-just bootstrapped it, it is probably the second.
+
+checked:
+  - structure: gates, references, contracts, cycles, rollups
+  - age and staleness: all 6 declaration(s), dated from git
+  - volatility: 6 declaration(s), against this graph's own median
+
+not checked here, so nothing is claimed about it:
+  - corrections and drift: this graph has no journal
+  - edge provenance: none of 3 edge(s) carry `evidence:`
+  - anything outside trellis: no corroborators are configured
+
+a clean result is only as wide as what it compared.
 ```
+
+Report the second list as well as the first. A graph nothing could be checked
+against is not a graph that checked out, and you are the only one in a position
+to say so before they believe it.
 
 ## The model in sixty seconds
 
