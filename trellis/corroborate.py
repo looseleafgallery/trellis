@@ -6,7 +6,7 @@ some system of record says? It is handed a snapshot and returns findings. It
 same rule the rest of the trust layer follows, applied across a process
 boundary where it becomes structural rather than a promise.
 
-Three constraints, each earned rather than chosen:
+Four constraints, each earned rather than chosen:
 
 **External findings are never errors.** `error` in this project means the graph
 cannot be evaluated — a cycle, a dangling reference. Only the kernel can know
@@ -23,6 +23,14 @@ accidentally impersonate a kernel diagnostic.
 could not run has not told you the graph is fine; it has told you nothing. That
 distinction has already cost this project twice, so a failure is reported as
 loudly as a disagreement.
+
+**A clean result says what it compared.** `26 rows checked, no conflicts` is not
+a result; `26 rows, status only - relations unchecked` is. Reporting clean
+without naming the scope hides a whole missing category behind a true number:
+a checker that compared only attributes once reported no conflicts across 26
+rows while an edge the record had held since the ticket was written was absent
+from the graph. Same failure as the one above, arriving as a number rather than
+as an exception.
 """
 
 from __future__ import annotations

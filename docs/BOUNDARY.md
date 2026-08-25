@@ -92,9 +92,36 @@ The last one generalises: any number in the payload that a person would ask
 ### Corroborators
 
 A corroborator checks the declaration against a system of record and emits
-findings: *this node says `in_progress`, Linear says Done*. It never resolves
-the disagreement, because resolving it requires knowing which one is wrong,
-and that is a judgement.
+findings. It never resolves the disagreement, because resolving it requires
+knowing which one is wrong, and that is a judgement.
+
+**It is handed a snapshot, and the snapshot carries the edges**, so a
+corroborator may check structure as readily as attributes. Both kinds are
+findings:
+
+- *this node says `in_progress`, Linear says Done* — an attribute disagrees.
+- *this node requires nothing; the record says its ticket is blocked by
+  another* — an edge the record holds and the graph does not.
+
+They are not worth the same. A wrong status is local: one node reports wrong.
+A missing edge corrupts everything derived from it — readiness, `impact`,
+chokepoints, the edge sensitivity that orders `reconcile` — because derivation
+is a function of the edges. Structure was always in scope here and was simply
+never said, and a corroborator written from the attribute example alone checks
+the cheaper half of the job.
+
+**The comparison is not symmetric.** An edge in the record and not in the graph
+is a finding. An edge in the graph and not in the record usually is not:
+trellis models gates a tracker cannot express, which is most of the reason to
+keep a graph beside one. A set difference taken in both directions reports
+every such gate as a discrepancy, and a check that fires hardest on the thing
+the tool is for is a check someone switches off.
+
+**A clean result must say what it compared.** `26 rows checked, no conflicts`
+is not a result; `26 rows, status only — relations unchecked` is. It is
+`CONTRIBUTING.md`'s rule — state what was checked — applied to a corroborator's
+own summary line, and it is what makes a whole missing category visible on the
+first run instead of never.
 
 Same rule as everything else in the trust layer: **challenge, never set.**
 

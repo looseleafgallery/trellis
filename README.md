@@ -720,8 +720,15 @@ command = ["trellis-linear-check"]
 ```
 
 Snapshot JSON on stdin, findings on stdout, merged into `doctor`. It joins on
-`ref:` — which is what that field was for. Three constraints, each earned rather
-than chosen:
+`ref:` — which is what that field was for.
+
+It compares whatever the snapshot carries, which is attributes *and* structure.
+*This node says `in_progress`, Linear says Done* is one finding; *this node
+requires nothing, and the record says its ticket is blocked by another* is the
+other. The second is the one worth writing: a wrong status is one node
+reporting wrong, while a missing edge is wrong readiness everywhere downstream.
+
+Four constraints, each earned rather than chosen:
 
 **A corroborator may report `info` or `warn`, never `error`.** An error means the
 graph cannot be evaluated, and only the kernel can establish that. A
@@ -741,9 +748,17 @@ not told you the graph is fine:
   unknown.
 ```
 
+**A clean result says what it compared.** `26 rows checked, no conflicts` is not
+a result; `26 rows, status only - relations unchecked` is. Reporting clean
+without naming the scope hides a missing category behind a true number, which is
+how a check that compared only attributes reported no conflicts while an edge the
+record had held for weeks was missing from the graph.
+
 Corroborators and renderers are two of the three interfaces trellis exposes
 without owning what is on the other side; see
-[`docs/BOUNDARY.md`](docs/BOUNDARY.md) for where the line sits and why.
+[`docs/BOUNDARY.md`](docs/BOUNDARY.md) for where the line sits and why — and,
+before writing a structural check, for the two rules it needs: the comparison
+is not symmetric, and a clean result has to say what it compared.
 
 ## Slices
 
