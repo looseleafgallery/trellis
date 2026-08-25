@@ -1,0 +1,20 @@
+<!--
+One changelog fragment: this file becomes part of CHANGELOG.md when a version
+is cut. Nobody else will pick this filename, which is the point - two branches
+can each add an entry and merge in either order.
+
+Keep exactly the heading you need and delete the rest, comment markers and
+all. Write the entry the way the entries in CHANGELOG.md are written: what
+changed, and why it was worth changing. Name the issue inline, as `(#81)`.
+
+Categories: {{ config.categories|join(', ') }}.
+-->
+
+{% for cat in config.categories -%}
+<!--
+### {{ cat }}
+
+- A bullet for the {{ cat }} category.
+
+-->
+{% endfor -%}
