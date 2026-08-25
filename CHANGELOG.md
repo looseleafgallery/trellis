@@ -321,6 +321,31 @@ expensive to break.
 
 ### Changed
 
+- **The corroborator contract says a corroborator may check structure, and
+  shows it.** `docs/BOUNDARY.md` defined the interface correctly and then gave
+  a single example of a finding — a status disagreement — so a corroborator
+  written from it compared statuses and not relations. One reported zero
+  conflicts across 26 rows while the graph was missing an edge the tracker had
+  held since the ticket was written. A wrong status is one node reporting
+  wrong; a missing edge corrupts everything derived from it, which is most of
+  what this engine does. The page was teaching the cheaper half of the job as
+  though it were the job.
+
+  A second, structural example now sits beside the status one, and the
+  definition says structure is in scope rather than leaving it to be inferred
+  from an example. Two rules that only surface once someone writes the
+  structural check are recorded with it. The comparison is **not symmetric**:
+  an edge in the record and not in the graph is a finding, an edge in the graph
+  and not in the record usually is not, because trellis models gates a tracker
+  cannot express and a set difference taken both ways reports every one of
+  them. And a clean result must say what it compared, so a run ends with `26
+  rows, status only — relations unchecked` rather than a bare count — which is
+  `CONTRIBUTING.md`'s "state what was checked" applied to a corroborator's own
+  summary line. The README section carries the second example and points at
+  both rules.
+
+  Documentation only. The relations check itself is TRE-3.
+
 - **README §Try it is split by audience, and no longer opens with `pip`.**
   "Use it" is the one-line installer; "work on it" links `CONTRIBUTING.md`
   rather than repeating the recipe. The two jobs were sharing one set of
