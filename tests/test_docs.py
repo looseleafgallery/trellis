@@ -326,6 +326,42 @@ def test_the_ruff_pin_is_the_same_number_in_both_places():
     )
 
 
+def test_ci_lints_with_the_ruff_the_dev_extra_pins():
+    """CI is the third place a ruff version can come from, and the loudest.
+
+    The test above keeps the dev extra and pre-commit on one number. Neither
+    constrains the lint job, and the job is the one that decides whether a pull
+    request is red. An action that resolves its own ruff makes somebody else's
+    release the reason a branch fails, over formatting its author cannot
+    reproduce in the venv CONTRIBUTING told them to build — and the failure
+    lands on whoever pushed next, not on whoever changed anything. So the job
+    installs the dev extra and runs what the install gave it.
+    """
+    workflow = ROOT / ".github" / "workflows" / "ci.yml"
+    text = workflow.read_text()
+    steps = yaml.safe_load(text)["jobs"]["lint"]["steps"]
+
+    fetched = [s["uses"] for s in steps if "ruff" in s.get("uses", "")]
+    assert not fetched, (
+        f"the lint job fetches ruff from {fetched}, which resolves a version "
+        f"this repository does not choose; install the dev extra instead"
+    )
+
+    run = "\n".join(s["run"] for s in steps if "run" in s)
+    assert re.search(r"pip install\b.*\[dev\]", run), (
+        "the lint job does not install the dev extra, so the ruff it judges a "
+        "pull request with is not the ruff a contributor's venv has"
+    )
+    for command in ("ruff check", "ruff format --check"):
+        assert command in run, f"the lint job no longer runs `{command}`"
+
+    # The pin is worth having only while it is the sole source of the number.
+    # A version written here would be a fourth copy, and the two-places test
+    # above would go on passing while CI ran something else entirely.
+    own = re.findall(r"ruff[^\n]*?[=@]=?\s*v?\d[\d.]*", text)
+    assert not own, f"ci.yml names its own ruff version in {own}"
+
+
 def test_the_packaged_manual_matches_the_one_in_the_repo():
     """`trellis brief` ships AGENTS.md so an agent in another repo can read it.
 
