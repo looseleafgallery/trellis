@@ -644,9 +644,32 @@ $ trellis doctor
 none of this changed any state. these are questions, not corrections.
 ```
 
-On a graph too small to have anything wrong with it, it says that rather than
-congratulating you. Findings are ranked by what to fix first, not just by
-severity, and `check` ends by naming one:
+On a graph it found nothing wrong with, it names its own scope rather than
+congratulating you — because most of what "nothing looks wrong" means on a
+fresh graph is that the checks needing git or a journal had nothing to run
+against:
+
+```
+$ trellis doctor
+nothing looks wrong across 6 nodes.
+
+checked:
+  - structure: gates, references, contracts, cycles, rollups
+  - age and staleness: all 6 declaration(s), dated from git
+
+not checked here, so nothing is claimed about it:
+  - corrections and drift: this graph has no journal
+  - edge provenance: none of 3 edge(s) carry `evidence:`
+
+a clean result is only as wide as what it compared.
+```
+
+`check`, `review` and `trust` do the same on a clean run. A check that could
+not run has found nothing, which is not the same as having found nothing wrong,
+and a summary line is where that difference is easiest to lose.
+
+Findings are ranked by what to fix first, not just by severity, and `check`
+ends by naming one:
 
 ```
 start with: sys.b - dangling_reference
@@ -752,7 +775,9 @@ not told you the graph is fine:
 a result; `26 rows, status only - relations unchecked` is. Reporting clean
 without naming the scope hides a missing category behind a true number, which is
 how a check that compared only attributes reported no conflicts while an edge the
-record had held for weeks was missing from the graph.
+record had held for weeks was missing from the graph. The kernel's own summary
+lines are held to this too, which is why `doctor` prints what it could not
+check.
 
 Corroborators and renderers are two of the three interfaces trellis exposes
 without owning what is on the other side; see

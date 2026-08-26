@@ -439,7 +439,13 @@ def test_doctor_reports_findings_with_remedies(tmp_path, capsys):
 
 
 def test_doctor_is_honest_about_a_small_clean_graph(tmp_path, capsys):
-    """Silence on a fresh graph means too small to disagree with, and says so."""
+    """Silence on a fresh graph is mostly silence about what could not run.
+
+    It used to guess - "either a good graph or a graph too small to disagree
+    with, probably the second" - which is a plausible cause offered as a
+    finding. The tool knows the real answer: with no git and no journal, the
+    age, volatility, correction and drift checks never ran (#41).
+    """
     from trellis import cli
 
     graph_dir = tmp_path / "graph"
@@ -452,7 +458,15 @@ def test_doctor_is_honest_about_a_small_clean_graph(tmp_path, capsys):
         "    gates: {start: p.a.done}\n"
     )
     assert cli.main(["--graph", str(graph_dir), "doctor"]) == 0
-    assert "too small to disagree with" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "nothing looks wrong across 3 nodes" in out
+    assert "not checked here" in out
+    assert "no node has a commit or a journal entry" in out
+    assert "this graph has no journal" in out
+    assert "no corroborators are configured" in out
+    assert "only as wide as what it compared" in out
+    # The structural half did run, and saying so is the other half of scope.
+    assert "structure: gates, references, contracts, cycles" in out
 
 
 def test_doctor_exits_nonzero_on_a_real_error(tmp_path):
@@ -1180,6 +1194,191 @@ def test_a_directory_outside_any_repo_is_known_to_be_outside(tmp_path):
     bare = tmp_path / "graph"
     bare.mkdir()
     assert not evidence.in_git(bare)
+
+
+# -- a clean summary says what it compared -----------------------------------
+#
+# `docs/BOUNDARY.md` requires this of a corroborator. The kernel's own summary
+# lines were making the same claim by silence (#41).
+
+
+@pytest.fixture
+def checkable(tmp_path):
+    """A structurally clean graph in git, annotated, with enough files to band.
+
+    Everything the trust layer reads is present here, which is the case the
+    scope line has to be able to distinguish from its opposite.
+    """
+    subprocess.run(
+        ["git", "init", "-q", str(tmp_path)], check=True, capture_output=True
+    )
+    git(tmp_path, "config", "user.email", "t@example.com")
+    git(tmp_path, "config", "user.name", "t")
+
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: p\n    title: Parent\n    status: in_progress\n"
+        "  - id: p.a\n    title: A\n    parent: p\n    status: done\n"
+        "  - id: p.b\n    title: B\n    parent: p\n    status: not_started\n"
+        "    gates: {start: p.a.done}\n"
+        "    evidence:\n"
+        "      p.a: {how: verified, at: '2026-08-20'}\n"
+        "  - id: p.c\n    title: C\n    parent: p\n    status: not_started\n"
+        "    gates: {start: p.b.done}\n"
+        "    evidence:\n"
+        "      p.b: {how: verified, at: '2026-08-20'}\n"
+    )
+    git(tmp_path, "add", "-A")
+    git(tmp_path, "commit", "-q", "-m", "initial", at="2026-08-20T10:00:00Z")
+    return graph_dir
+
+
+def test_doctor_says_what_it_could_check_when_it_can_check_it(checkable, capsys):
+    """The same clean line on a graph in git, with a journal, reads differently.
+
+    The point is not that the message is longer. It is that the two runs are
+    distinguishable at all - before this, a graph nothing could be checked
+    against and a graph everything checked out on printed one sentence.
+    """
+    from trellis import cli
+
+    cli.main(["--graph", str(checkable), "set", "p.b", "status=in_progress", "-y"])
+    capsys.readouterr()
+
+    assert cli.main(["--graph", str(checkable), "doctor", "--stale-after", "3650"]) == 0
+    out = capsys.readouterr().out
+    assert "nothing looks wrong across 4 nodes" in out
+    assert "age and staleness: all 4 declaration(s), dated from" in out
+    assert "volatility: 4 declaration(s), against this graph's own median" in out
+    assert "corrections and drift: from this graph's journal" in out
+    assert "edge provenance: 2 of 2 edge(s) carry `evidence:`" in out
+    assert "no node has a commit or a journal entry" not in out
+    assert "this graph has no journal" not in out
+
+
+def test_trust_does_not_call_an_unrunnable_check_a_clean_one(repo, capsys):
+    """`nothing to challenge` covered six checks and named two.
+
+    This graph is in git and has no journal, and its files are too few for a
+    volatility median to mean anything. Both are reasons a check did not run,
+    and neither is a reason to believe the declaration.
+    """
+    from trellis import cli
+
+    small = repo.parent / "small"
+    small.mkdir()
+    (small / "g.yaml").write_text("id: only\ntitle: Only\nstatus: not_started\n")
+    git(repo.parent, "add", "-A")
+    git(repo.parent, "commit", "-q", "-m", "one node", at="2026-08-20T10:00:00Z")
+
+    assert cli.main(["--graph", str(small), "trust"]) == 0
+    out = capsys.readouterr().out
+    assert "nothing to challenge in what could be checked here" in out
+    assert "not checked here" in out
+    assert "1 node(s) have file history; 4 are needed for a median" in out
+    assert "corrections: this graph has no journal" in out
+    # The old line asserted this as a finding. It is true, so it stays - as
+    # something that was checked, under a heading that says so.
+    assert "age and staleness: all 1 declaration(s)" in out
+
+
+def test_check_does_not_claim_more_than_the_declaration(tmp_path, capsys):
+    """`ok - N nodes, no problems` reads as a clean bill of health.
+
+    `check` never opens git or the journal, so a graph whose every node went
+    stale a month ago passes it. The line is true and the scope is the half
+    that makes it readable.
+    """
+    from trellis import cli
+
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: p\n    status: in_progress\n"
+        "  - id: p.a\n    parent: p\n    status: not_started\n"
+        "    gates: {start: p.b.done}\n"
+        "  - id: p.b\n    parent: p\n    status: done\n"
+    )
+    assert cli.main(["--graph", str(graph_dir), "check"]) == 0
+    out = capsys.readouterr().out
+    assert "no structural problems" in out
+    assert "the declaration only" in out
+    assert "`trellis doctor`" in out
+
+
+def test_a_missing_named_gate_is_not_the_absence_of_every_gate(tmp_path, capsys):
+    """`explain n --gate finish` said "nothing gates this node".
+
+    What it had established is that `finish` is not declared. `start` was,
+    which is a different sentence (#41).
+    """
+    from trellis import cli
+
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: a\n    status: done\n"
+        "  - id: b\n    status: not_started\n    gates: {start: a.done}\n"
+    )
+    assert (
+        cli.main(["--graph", str(graph_dir), "explain", "b", "--gate", "finish"]) == 0
+    )
+    out = capsys.readouterr().out
+    assert "nothing gates this node" not in out
+    assert "no 'finish' gate declared - this node has 'start'" in out
+    assert "is unmet" not in out  # `start` is satisfied here
+
+
+def test_the_gate_that_was_not_asked_about_is_not_assumed_met(tmp_path, capsys):
+    """Only the named gate is evaluated, so the others' state is unknown here.
+
+    Reporting them as met would be this bug rediscovered inside its own fix,
+    so the unmet ones are named and the way to ask about them is given.
+    """
+    from trellis import cli
+
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n"
+        "  - id: a\n    status: not_started\n"
+        "  - id: b\n    status: not_started\n    gates: {start: a.done}\n"
+    )
+    assert (
+        cli.main(["--graph", str(graph_dir), "explain", "b", "--gate", "finish"]) == 0
+    )
+    out = capsys.readouterr().out
+    assert "no 'finish' gate declared - this node has 'start'" in out
+    assert "'start' is unmet; ask about it with --gate start" in out
+
+
+def test_a_node_with_no_gates_at_all_still_says_so(tmp_path, capsys):
+    from trellis import cli
+
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text("id: a\nstatus: not_started\n")
+    assert (
+        cli.main(["--graph", str(graph_dir), "explain", "a", "--gate", "finish"]) == 0
+    )
+    assert "no other gate either" in capsys.readouterr().out
+
+
+def test_nothing_holding_anything_up_names_what_it_looked_at(tmp_path, capsys):
+    """`chokepoints` considers open work only, and the clean line did not say."""
+    from trellis import cli
+
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "nodes:\n  - id: a\n    status: done\n  - id: b\n    status: done\n"
+    )
+    assert cli.main(["--graph", str(graph_dir), "blocking", "--all"]) == 0
+    assert "no open node has anything downstream of it" in capsys.readouterr().out
 
 
 # -- drawing for a person at a terminal --------------------------------------

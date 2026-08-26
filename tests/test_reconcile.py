@@ -147,7 +147,25 @@ def test_a_graph_with_no_edges_says_so(tmp_path, capsys):
     graph_dir.mkdir()
     (graph_dir / "g.yaml").write_text("id: a\nstatus: done\n")
     assert cli.main(["--graph", str(graph_dir), "reconcile"]) == 0
-    assert "no gates yet" in capsys.readouterr().out
+    assert "no gate here references another node" in capsys.readouterr().out
+
+
+def test_a_gate_that_names_nobody_is_still_a_gate(tmp_path, capsys):
+    """`no edges` used to be reported as `this graph has no gates yet`.
+
+    A gate whose expression references no other node is a declared gate and
+    not an edge, so the tool had established the first and said the second
+    (#41).
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(
+        "id: a\nstatus: not_started\ngates: {start: 'False'}\n"
+    )
+    assert cli.main(["--graph", str(graph_dir), "reconcile"]) == 0
+    out = capsys.readouterr().out
+    assert "no gates yet" not in out
+    assert "no gate here references another node" in out
 
 
 # -- who believed it, not just how -------------------------------------------

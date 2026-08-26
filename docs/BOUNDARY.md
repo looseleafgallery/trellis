@@ -123,6 +123,15 @@ is not a result; `26 rows, status only — relations unchecked` is. It is
 own summary line, and it is what makes a whole missing category visible on the
 first run instead of never.
 
+**The kernel holds itself to that one.** It is stated here because it was found
+here, not because it is a rule for other people's code. `doctor` printed
+"nothing looks wrong across 3 nodes" on a graph with no git and no journal,
+where the age, volatility, correction and drift checks had had nothing to run
+against; `check` said "no problems" about a file it had read and a history it
+had never opened. So every clean summary the kernel prints names its own scope,
+and names what it could not check separately from what it checked and found
+nothing (#41).
+
 Same rule as everything else in the trust layer: **challenge, never set.**
 
 ## Research and execution are separate tracks

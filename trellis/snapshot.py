@@ -242,6 +242,46 @@ def read_index(graph_dir: str | Path) -> list[Entry]:
     return out
 
 
+def unreadable_index_lines(graph_dir: str | Path) -> int:
+    """Index lines `read_index` skipped because they could not be read.
+
+    Skipping is right - one bad line must not hide every snapshot behind it.
+    Skipping in silence is not, because the result is indistinguishable from a
+    snapshot that was never taken (#41).
+    """
+    path = snapshot_dir(graph_dir) / INDEX_NAME
+    if not path.exists():
+        return 0
+    bad = 0
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            Entry.from_dict(json.loads(line))
+        except (json.JSONDecodeError, KeyError):
+            bad += 1
+    return bad
+
+
+def unindexed_dirs(graph_dir: str | Path) -> list[str]:
+    """Snapshot directories on disk that the index does not name.
+
+    The index is the listing, so a snapshot missing from it is invisible to
+    every command here. That is a different situation from never having taken
+    one, and the difference is one `listdir` away.
+    """
+    root = snapshot_dir(graph_dir)
+    if not root.is_dir():
+        return []
+    indexed = {entry.id for entry in read_index(graph_dir)}
+    return sorted(
+        child.name
+        for child in root.iterdir()
+        if child.is_dir() and child.name not in indexed
+    )
+
+
 def _append_index(graph_dir: str | Path, entry: Entry) -> None:
     path = snapshot_dir(graph_dir) / INDEX_NAME
     path.parent.mkdir(parents=True, exist_ok=True)
