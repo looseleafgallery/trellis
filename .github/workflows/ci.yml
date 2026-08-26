@@ -17,12 +17,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
+      - uses: actions/setup-python@v5
         with:
-          args: check --output-format=github
-      - uses: astral-sh/ruff-action@v3
-        with:
-          args: format --check
+          # Only to get a pip; the linter is pinned, so its host version is
+          # not part of what it judges. The floor from pyproject.toml.
+          python-version: "3.11"
+      # Installed from the dev extra rather than fetched by an action, so the
+      # ruff that decides whether a pull request is red is the same one
+      # `pip install -e '.[dev]'` puts in the contributor's venv. An action
+      # that resolves its own version makes a ruff release a red build on code
+      # nobody touched, and the diff that fails is not the diff that caused it.
+      - run: pip install -e '.[dev]'
+      - run: ruff check --output-format=github
+      - run: ruff format --check
 
   test:
     runs-on: ubuntu-latest

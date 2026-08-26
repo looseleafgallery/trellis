@@ -11,10 +11,12 @@ dependencies = ["PyYAML>=6.0"]
 [project.optional-dependencies]
 # The engine needs none of this; only `trellis log` does.
 llm = ["anthropic>=0.69", "pydantic>=2.0"]
-# `ruff` is pinned to exactly what `.pre-commit-config.yaml` pins, so the commit
-# hook and the command CONTRIBUTING tells you to run cannot disagree about what
-# passes. A linter is not semver-safe: a new minor adds rules and moves
-# formatting, so a floating version turns an unrelated release into a red run.
+# `ruff` is pinned here, and this is the only place the number lives: the commit
+# hook pins the same one, and CI installs this extra rather than fetching its
+# own, so the three things that can call a change unformatted cannot disagree
+# about what passes. A linter is not semver-safe: a new minor adds rules and
+# moves formatting, so a floating version turns an unrelated release into a red
+# run on a branch that did not change anything.
 # `scriv` is floored at the version this convention was verified against
 # rather than at a researched minimum. It is only needed by `scriv create`,
 # which writes a changelog fragment, and `scriv collect`, which folds the
