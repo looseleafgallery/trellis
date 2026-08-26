@@ -1568,21 +1568,36 @@ def _choices(graph, problem, siblings: int, where: str = "") -> list[Choice]:
     return out
 
 
-def _full_menu(choices: list[Choice]) -> str:
+def _progress(done: int, total: int, st, width: int = 24) -> str:
+    """A block rule, because a fraction has to be read and a rule does not.
+
+    The number stays — it is the one a person quotes when they stop halfway —
+    but it is no longer the only way to see how far in you are.
+    """
+    if total <= 0:
+        return ""
+    filled = round(width * done / total)
+    bar = st.rule * filled + " " * (width - filled)
+    return st.dim(f"{bar}  {done} of {total}")
+
+
+def _full_menu(choices: list[Choice], st=None) -> str:
     """Each option on one line, its consequence indented under it.
 
     The consequence is the point, so it gets its own line rather than a
     parenthetical - but only one, because six options spending three lines
     each is the noise the grouped review just removed.
     """
+    st = st or style.PLAIN
     width = max(len(c.label) for c in choices)
     indent = " " * (width + 11)
     lines = []
     for choice in choices:
         writes = not choice.effect.startswith("writes nothing")
         mark = "*" if writes else " "
+        key = st.decision(f"[{choice.key}]")
         lines.append(
-            f"  {mark} [{choice.key}] {choice.label.ljust(width)}  {choice.does}"
+            f"  {mark} {key} {st.dim(choice.label.ljust(width))}  {choice.does}"
         )
         # A bare "writes nothing" repeats what the marker column already says.
         # The line is worth its space only when the consequence goes further.
@@ -1603,14 +1618,28 @@ def _review_one(
     label: str,
     siblings: int = 0,
     explained: set[str] | None = None,
+    st=None,
+    progress: str = "",
+    tallied: str = "",
 ) -> str:
     """Show one finding and act on the answer. Returns the action taken."""
-    print(f"\n{label} {problem.severity}  {problem.code}")
+    st = st or style.PLAIN
+    if progress:
+        print("\n" + progress)
+    if tallied:
+        print(st.dim(tallied))
+    print(
+        f"\n{label} "
+        + st.severity(problem.severity, problem.severity)
+        + "  "
+        + st.scaffold(problem.code)
+    )
     for line in problem.message.splitlines():
         print(f"  {line.strip()}")
     remedy = REMEDIES.get(problem.code)
     if remedy:
-        print(f"  -> {remedy}")
+        # The one amber sentence: a remedy is what the person is deciding on.
+        print("  " + st.decision(f"\u2192 {remedy}"))
 
     # A key and a one-word label leave the consequence unsaid, and the
     # consequences here differ sharply: acknowledging answers a finding for
@@ -1633,7 +1662,8 @@ def _review_one(
     novel = {c.key for c in choices} - seen
 
     while True:
-        print(f"\n{_full_menu(choices)}" if novel else f"\n  [{keys}]  ? for help")
+        compact = "  " + st.decision(f"[{keys}]") + st.dim("  ? for help")
+        print(f"\n{_full_menu(choices, st)}" if novel else "\n" + compact)
         seen.update(c.key for c in choices)
         novel = set()
         try:
@@ -1917,6 +1947,8 @@ def cmd_review(args) -> int:
     if muted:
         print(f"{muted} already acknowledged and not shown.")
 
+    st = style.Style.detect(args)
+    position = 0
     tally: dict[str, int] = {}
     live = {(p.node, p.code, p.message) for p in problems}
     explained: set[str] = set()
@@ -1941,6 +1973,8 @@ def cmd_review(args) -> int:
                 for f in findings[finding_index:]
                 if (f.node, f.code, f.message) in live and f.severity != "error"
             ]
+            position += 1
+            done = {k: v for k, v in tally.items() if k not in ("quit", "skip")}
             action = _review_one(
                 args,
                 graph,
@@ -1951,6 +1985,9 @@ def cmd_review(args) -> int:
                 label=f"({finding_index}/{len(findings)})",
                 siblings=len(remaining),
                 explained=explained,
+                st=st,
+                progress=_progress(position - 1, len(problems), st),
+                tallied=" \u00b7 ".join(f"{v} {k}" for k, v in sorted(done.items())),
             )
 
             if action == "ack_all":
