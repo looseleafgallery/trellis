@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from .engine import Derived, Engine
 from .model import Graph
+from .style import PLAIN, Style
 
 # Readiness -> mermaid class. Deliberately few: a diagram that encodes six
 # states in six colours is a legend, not a picture.
@@ -159,7 +160,62 @@ def _slice_roots(graph: Graph, nodes: set[str]) -> list[str]:
 MAX_DEPTH = 12
 
 
-def tree(engine: Engine, nodes: set[str], max_depth: int = MAX_DEPTH) -> str:
+# Readiness words are at most ten characters, so a constant column keeps the
+# status band in the same place from one slice to the next. Aligning to the
+# widest word *present* made the column jump every time the slice changed,
+# which is the opposite of what a fixed column is for.
+STATUS_WIDTH = 12
+
+# Nothing below these is waiting on anything: they are settled.
+_SETTLED = {"done", "live", "superseded", "abandoned"}
+
+
+def slice_leaves(engine: Engine, nodes: set[str]) -> list[str]:
+    """Unsettled nodes in the slice that depend on nothing else in it.
+
+    The bottom of the tree, which is what the whole slice is ultimately
+    waiting on — the answer to the question that made someone draw it.
+    """
+    graph = engine.graph
+    derived = engine.all_derived()
+    leaves = []
+    for node_id in sorted(nodes):
+        if any(t in nodes for t in graph.references_of(node_id)):
+            continue
+        if derived[node_id].readiness in _SETTLED:
+            continue
+        leaves.append(node_id)
+    return leaves
+
+
+def summarise(engine: Engine, nodes: set[str], st: Style | None = None) -> str:
+    """One line of counts, and what the slice waits on. Presentation only."""
+    st = st or PLAIN
+    derived = engine.all_derived()
+    counts: dict[str, int] = {}
+    for node_id in nodes:
+        word = derived[node_id].readiness
+        counts[word] = counts.get(word, 0) + 1
+
+    ready = counts.get("ready", 0)
+    lead = f"{ready} ready" if ready else st.decision("nothing in this slice is ready")
+    rest = ", ".join(
+        f"{n} {word}" for word, n in sorted(counts.items()) if word != "ready"
+    )
+    head = f"{lead} \u00b7 {rest}" if rest else lead
+
+    leaves = slice_leaves(engine, nodes)
+    if not leaves:
+        return head
+    return head + "\nthe slice waits on " + ", ".join(leaves)
+
+
+def tree(
+    engine: Engine,
+    nodes: set[str],
+    max_depth: int = MAX_DEPTH,
+    st: Style | None = None,
+) -> str:
     """The slice as a dependency tree, drawn for a terminal.
 
     A tree projection of a graph, which means a node needed by two others
@@ -167,12 +223,19 @@ def tree(engine: Engine, nodes: set[str], max_depth: int = MAX_DEPTH) -> str:
     `explain` handles a shared branch. That is a deliberate trade: a general
     DAG layout in fixed-width characters becomes unreadable at exactly the size
     where you need it, and an honest repeat costs one line.
+
+    Scaffolding is drawn faint and the marks bold, so the marks form a vertical
+    band you can read in one pass without the branches competing for attention.
+    Widths are measured on the unpainted text — escape sequences have length
+    and would silently break every column if they were counted.
     """
+    st = st or PLAIN
     graph = engine.graph
     derived = engine.all_derived()
     # Laid out in two passes: the branch column varies in width with depth, so
-    # the status column can only be aligned once every row exists.
-    rows: list[tuple[str, str, str]] = []
+    # the status column can only be aligned once every row exists. Each row
+    # keeps its parts separate so painting happens after measuring.
+    rows: list[tuple[str, str, str, str, str]] = []
     expanded: set[str] = set()
 
     def remaining(node_id: str, seen: set[str]) -> int:
@@ -187,9 +250,17 @@ def tree(engine: Engine, nodes: set[str], max_depth: int = MAX_DEPTH) -> str:
         d = derived[node_id]
         node = graph.get(node_id)
         seen = node_id in expanded
-        left = f"{prefix}{connector}{MARKS.get(d.readiness, '?')} {node_id}"
+        mark = MARKS.get(d.readiness, "?")
         title = node.title if node.title != node_id else ""
-        rows.append((left, d.readiness + ("  (above)" if seen else ""), title))
+        rows.append(
+            (
+                prefix + connector,
+                mark,
+                node_id,
+                d.readiness + ("  (above)" if seen else ""),
+                title,
+            )
+        )
         if seen:
             return
         expanded.add(node_id)
@@ -197,13 +268,16 @@ def tree(engine: Engine, nodes: set[str], max_depth: int = MAX_DEPTH) -> str:
         children = sorted(t for t in graph.references_of(node_id) if t in nodes)
         if not children:
             return
-        child_prefix = prefix + ("   " if last else "|  ") if connector else prefix
+        pad = "   " if last else st.branch_pipe
+        child_prefix = prefix + pad if connector else prefix
 
         if depth >= max_depth:
             left_over = remaining(node_id, set(expanded) - {node_id})
             rows.append(
                 (
-                    f"{child_prefix}`- ...",
+                    child_prefix + st.branch_last,
+                    "",
+                    "...",
                     f"{left_over} more below",
                     "use --around to focus on part of this",
                 )
@@ -212,23 +286,48 @@ def tree(engine: Engine, nodes: set[str], max_depth: int = MAX_DEPTH) -> str:
 
         for index, child in enumerate(children):
             is_last = index == len(children) - 1
-            draw(child, child_prefix, "`- " if is_last else "|- ", is_last, depth + 1)
+            draw(
+                child,
+                child_prefix,
+                st.branch_last if is_last else st.branch_mid,
+                is_last,
+                depth + 1,
+            )
 
     roots = _slice_roots(graph, nodes)
     for index, root in enumerate(roots):
         draw(root, "", "", True, 0)
         if index != len(roots) - 1:
-            rows.append(("", "", ""))
+            rows.append(("", "", "", "", ""))
 
-    branch = max((len(left) for left, _, _ in rows), default=0)
-    status = max((len(state) for _, state, _ in rows), default=0)
+    # Measured unpainted, then painted — the reverse silently breaks columns.
+    branch = max(
+        (
+            len(scaffold) + len(mark) + (1 if mark else 0) + len(node_id)
+            for scaffold, mark, node_id, _, _ in rows
+        ),
+        default=0,
+    )
+    status = max(
+        STATUS_WIDTH, max((len(state) for _, _, _, state, _ in rows), default=0)
+    )
+
     lines = []
-    for left, state, title in rows:
-        if not left:
+    for scaffold, mark, node_id, state, title in rows:
+        if not node_id:
             lines.append("")
             continue
-        line = f"{left.ljust(branch)}  {state.ljust(status)}"
-        lines.append(f"{line}  {title}".rstrip())
+        plain = f"{scaffold}{mark}{' ' if mark else ''}{node_id}"
+        painted = (
+            st.scaffold(scaffold)
+            + (st.mark(mark, state.split()[0]) + " " if mark else "")
+            + node_id
+        )
+        line = painted + " " * (branch - len(plain)) + "  "
+        word, _, note = state.partition("  ")
+        painted_state = st.readiness(word) + (st.dim("  " + note) if note else "")
+        line += painted_state + " " * (status - len(state))
+        lines.append((line + "  " + title).rstrip() if title else line.rstrip())
     return "\n".join(lines)
 
 
