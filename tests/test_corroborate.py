@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from trellis import cli, corroborate
+from trellis.style import SEVERITY_GLYPHS
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "agent-loop" / "graph"
 
@@ -112,8 +113,9 @@ def test_doctor_renders_a_graph_level_finding_without_an_empty_slot(project, cap
     )
     cli.main(["--graph", str(project), "doctor"])
     out = capsys.readouterr().out
-    assert "  ? (graph): 33 ticket(s) in the tables have no node" in out
-    assert "  ? : " not in out
+    warn = SEVERITY_GLYPHS["warn"]
+    assert f"  {warn} (graph): 33 ticket(s) in the tables have no node" in out
+    assert f"  {warn} : " not in out
 
 
 def test_a_corroborator_may_not_claim_an_error(project):

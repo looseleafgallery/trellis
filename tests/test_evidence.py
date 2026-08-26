@@ -433,7 +433,7 @@ def test_doctor_reports_findings_with_remedies(tmp_path, capsys):
     code = cli.main(["--graph", str(graph_dir), "doctor"])
     out = capsys.readouterr().out
     assert code == 0  # findings, but none are errors
-    assert "look wrong to me" in out
+    assert "2 warn" in out  # the tally, which replaced "N thing(s) look wrong"
     assert "nobody has agreed this" in out  # the remedy, not just the finding
     assert "questions, not corrections" in out
 
