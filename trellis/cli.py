@@ -12,7 +12,7 @@ from datetime import UTC
 from pathlib import Path
 from typing import NamedTuple
 
-from . import corroborate, edit, journal, proposals, queries, viz
+from . import corroborate, edit, journal, proposals, queries, style, viz
 from . import delta as delta_mod
 from . import evidence as evidence_mod
 from . import snapshot as snapshot_mod
@@ -2023,7 +2023,12 @@ def cmd_graph(args) -> int:
         return 2
 
     if args.format == "tree":
-        print(viz.tree(engine, nodes))
+        st = style.Style.detect(args)
+        where = f"slice around {args.around}" if args.around else "whole graph"
+        hops = f" \u00b7 {args.hops} hops" if args.around else ""
+        print(st.dim(f"{where}{hops}") + st.dim(f"  {len(nodes)} nodes"))
+        print(viz.tree(engine, nodes, st=st))
+        print(viz.summarise(engine, nodes, st))
         return 0
 
     if args.format == "html":
@@ -2588,6 +2593,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-cache", action="store_true", help="ignore the on-disk cache"
     )
     parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument(
+        "--ascii",
+        action="store_true",
+        help="draw trees with ASCII branches instead of box-drawing characters",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("check", help="validate the graph and list violations")
