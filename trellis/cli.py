@@ -1173,6 +1173,11 @@ REMEDIES = {
 }
 
 
+# The three real severities, worst first. Named here so the blocks, the
+# tally and the glyph table cannot drift apart.
+SEVERITY_BLOCKS = ("error", "warn", "info")
+
+
 def cmd_doctor(args) -> int:
     """Everything that looks wrong, structural and evidential, in one place.
 
@@ -1182,7 +1187,7 @@ def cmd_doctor(args) -> int:
     """
     graph, cache, graph_dir = _load(args)
     engine = Engine(graph, cache)
-    problems = queries.check(graph, engine, graph_dir)
+    problems, muted = queries.check_with_muted(graph, engine, graph_dir)
     derived = engine.all_derived()
     evidence = evidence_mod.gather(graph_dir, graph)
     cache.save()
@@ -1270,7 +1275,20 @@ def cmd_doctor(args) -> int:
         label = finding.message or finding.code
         findings.append((finding.severity, finding.node, label))
 
-    findings.sort(key=lambda f: (queries.SEVERITY_ORDER.get(f[0], 3), f[1]))
+    # Codes are needed before the sort, not just for remedies: urgency is
+    # keyed on them, and without it "worst first" degrades to alphabetical
+    # inside each severity.
+    codes = {p.node + p.message: p.code for p in problems}
+    for finding in external:
+        codes.setdefault(finding.node + (finding.message or finding.code), finding.code)
+
+    findings.sort(
+        key=lambda f: (
+            queries.SEVERITY_ORDER.get(f[0], 3),
+            queries.URGENCY.get(codes.get(f[1] + f[2], ""), queries.DEFAULT_URGENCY),
+            f[1],
+        )
+    )
 
     if args.json:
         _emit(
@@ -1303,19 +1321,68 @@ def cmd_doctor(args) -> int:
         print("\na clean result is only as wide as what it compared.")
         return 0
 
-    codes = {p.node + p.message: p.code for p in problems}
-    print(f"{len(findings)} thing(s) look wrong to me:\n")
-    for severity, node, message in findings:
-        mark = {"error": "!", "warn": "?", "info": "."}.get(severity, "-")
-        print(f"  {mark} {node}: {message}")
-        remedy = REMEDIES.get(codes.get(node + message, ""))
-        if remedy:
-            print(f"      -> {remedy}")
-    print("\nnone of this changed any state. these are questions, not corrections.")
+    st = style.Style.detect(args)
+
+    # Severity and urgency were being read as one scale: a long flat list
+    # invites you to treat position as importance, when position inside a
+    # severity only means "fix this one first". Three blocks say the two
+    # things separately.
+    counts = {sev: sum(1 for f in findings if f[0] == sev) for sev in SEVERITY_BLOCKS}
+    tally = " \u00b7 ".join(
+        st.severity(f"{counts[sev]} {sev}", sev)
+        for sev in SEVERITY_BLOCKS
+        if counts[sev]
+    )
+    if muted:
+        tally += st.dim(f" \u00b7 {muted} acknowledged and not shown")
+    print(tally)
+    print(st.dim(f"{len(graph)} nodes\n"))
+
+    # Codes sit at a right edge rather than in the reading path: greppable,
+    # and out of the way of the sentence that says what is wrong.
+    labels = {(sev, node, msg): f"{node}: {msg}" for sev, node, msg in findings}
+    width = min(max((len(v) for v in labels.values()), default=0), 96)
+
+    for severity in SEVERITY_BLOCKS:
+        block = [f for f in findings if f[0] == severity]
+        if not block:
+            continue
+        print(st.severity(severity, severity))
+        for sev, node, message in block:
+            code = codes.get(node + message, "")
+            label = labels[(sev, node, message)]
+            line = f"  {st.glyph(severity)} {label}"
+            if code:
+                line += " " * max(1, width - len(label)) + "  " + st.scaffold(code)
+            print(line)
+            remedy = REMEDIES.get(code)
+            if remedy:
+                # The only amber in the output: a remedy is the one place a
+                # person is being asked to decide something.
+                print("      " + st.decision(f"\u2192 {remedy}"))
+        print()
+
+    first = findings[0]
+    first_code = codes.get(first[1] + first[2], "")
+    start = f"start with {first[1]}" + (f" - {first_code}" if first_code else "")
+    print(st.dim(start + " \u00b7 within each block, most urgent first"))
+    if counts["error"]:
+        print(
+            st.dim(
+                "an error cannot be acknowledged, so the graph cannot be made to "
+                "look clean while it is there"
+            )
+        )
     print(
-        "if one of these is true and will stay true, answer it for good with "
-        "`acknowledge: [<code>]`\non the node - acknowledged findings are counted, "
-        "not hidden."
+        st.dim(
+            "\nnone of this changed any state. these are questions, not corrections."
+        )
+    )
+    print(
+        st.dim(
+            "if one of these is true and will stay true, answer it for good with "
+            "`acknowledge: [<code>]` on the node."
+        )
     )
     return 1 if any(f[0] == "error" for f in findings) else 0
 
