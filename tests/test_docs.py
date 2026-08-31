@@ -439,3 +439,160 @@ def test_the_installer_offers_the_same_git_url_the_readme_does():
     url = "git+https://github.com/looseleafgallery/trellis.git"
     assert url in (ROOT / "install.sh").read_text()
     assert url in (ROOT / "README.md").read_text()
+
+
+# -- the console examples ----------------------------------------------------
+#
+# The yaml examples above are parsed, and the commands, statuses and exports the
+# prose names are checked. Nothing read the blocks that show what a command
+# *prints*, and three consecutive rendering changes went by without touching
+# them: the README went on showing a header line that had been deleted, a `.`
+# gutter glyph that is now reserved for readiness marks, and a review menu of
+# five bare keys. A doc that shows output the tool cannot produce is the same
+# failure as a doc that shows yaml the loader rejects.
+
+
+def console_blocks(path: Path) -> list[tuple[int, str]]:
+    """Fenced blocks opened with a bare ```, with the line they start on.
+
+    Every fence toggles, tagged or not. Watching only for the bare ones would
+    read a ```yaml block's closing fence as an opening one and mistake the
+    prose after it for a transcript.
+    """
+    out = []
+    lines = path.read_text().splitlines()
+    console = False
+    inside = False
+    start = 0
+    buffer: list[str] = []
+    for number, line in enumerate(lines, 1):
+        fence = line.strip()
+        if not fence.startswith("```"):
+            if inside and console:
+                buffer.append(line)
+            continue
+        if inside:
+            if console:
+                out.append((start, "\n".join(buffer)))
+            inside = False
+            continue
+        inside, console, start, buffer = True, fence == "```", number, []
+    return out
+
+
+def transcript(path: Path, command: str, containing: str) -> str:
+    """The block that runs `$ <command>` and mentions `containing`, minus its
+    first line.
+
+    Fails rather than returning nothing: a block that has been renamed away is
+    exactly the drift this is here to catch, and a test that silently checks
+    nothing is worse than no test.
+    """
+    found = [
+        body.split("\n", 1)[1]
+        for _line, body in console_blocks(path)
+        if body.startswith(f"$ {command}\n") and containing in body
+    ]
+    assert len(found) == 1, (
+        f"{path.name} has {len(found)} `$ {command}` blocks mentioning "
+        f"{containing!r}, expected exactly one"
+    )
+    return found[0]
+
+
+DOCTOR_EXAMPLE = (
+    "nodes:\n"
+    "  - id: contract.stage_handoff\n"
+    "    kind: contract\n"
+    "    status: draft\n"
+    "    satisfied_by: [runner]\n"
+    "\n"
+    "  - id: pipeline\n"
+    "    status: in_progress\n"
+    "\n"
+    "  - id: runner\n"
+    "    parent: pipeline\n"
+    "    status: not_started\n"
+    "\n"
+    "  - id: agent.emit\n"
+    "    parent: pipeline\n"
+    "    status: not_started\n"
+    "    gates: {start: contract.stage_handoff.live}\n"
+    "    evidence:\n"
+    "      contract.stage_handoff: inferred\n"
+)
+
+
+def test_the_doctor_transcript_in_the_readme_is_what_doctor_prints(tmp_path, capsys):
+    """The README's `doctor` example, run.
+
+    Pinned exactly rather than sampled for a phrase or two, because what went
+    stale here was the *shape* — the severity blocks, the code column and the
+    footer — and every phrase-level check would have passed on the old block.
+    """
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(DOCTOR_EXAMPLE)
+
+    cli.main(["--graph", str(graph_dir), "doctor"])
+    printed = capsys.readouterr().out.strip()
+
+    expected = transcript(ROOT / "README.md", "trellis doctor", "undrafted_contract")
+    assert printed == expected.strip(), (
+        "the README shows output `trellis doctor` does not produce. It is a "
+        "transcript, not an illustration - paste a real run over it."
+    )
+
+
+@pytest.mark.parametrize("path", DOCS, ids=lambda p: p.name)
+def test_a_documented_clean_run_names_the_scope_it_always_names(path):
+    """A truncated scope teaches the opposite of what the scope is for.
+
+    `cmd_doctor` prints the structural line and a corroborator line on every
+    clean run - the second either names the corroborators it ran or says there
+    were none. A doc that shows a clean result with that line missing is
+    showing a narrower claim than the tool ever makes, which is the failure the
+    scope block exists to prevent.
+    """
+    for line, body in console_blocks(path):
+        if "nothing looks wrong across" not in body:
+            continue
+        assert "structure:" in body, (
+            f"{path.name}:{line} shows a clean run that does not name what it "
+            f"checked structurally"
+        )
+        assert "outside trellis" in body, (
+            f"{path.name}:{line} shows a clean run with no corroborator line; "
+            f"`doctor` prints one on every clean run, so this block claims a "
+            f"narrower scope than the tool does"
+        )
+
+
+def test_the_review_menu_in_the_readme_is_the_menu_review_prints(monkeypatch):
+    """The keys, and what each one says it does to the graph.
+
+    Five bare keys on one line is what this replaced: a verb is not a
+    consequence, and `acknowledge` reads like dismissing a notice while being a
+    permanent ruling in the YAML. The README kept the old row for two releases.
+    """
+    from trellis.model import Graph, node_from_dict
+    from trellis.queries import Problem
+    from trellis.style import PLAIN
+
+    monkeypatch.setenv("EDITOR", "vim")
+    graph = Graph(
+        {
+            "contract.x": node_from_dict(
+                {"id": "contract.x", "kind": "contract", "status": "draft"}
+            )
+        }
+    )
+    problem = Problem(
+        code="undrafted_contract", severity="warn", node="contract.x", message="m"
+    )
+    menu = cli._full_menu(cli._choices(graph, problem, 0, "contracts.yaml"), PLAIN)
+
+    shown = transcript(ROOT / "README.md", "trellis review", "[node 1/1]")
+    assert menu in shown, (
+        "the README shows a `review` menu that `_full_menu` does not print"
+    )
