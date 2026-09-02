@@ -635,14 +635,26 @@ what is true, a remedy says what to ask:
 
 ```
 $ trellis doctor
-2 thing(s) look wrong to me:
+1 warn · 1 info
+4 nodes
 
-  . contract.stage_handoff: still proposed but 1 node(s) gate on it (agent.emit)
-      -> nobody has agreed this. Ask both sides whether it is settled.
-  . agent.emit: its edge to contract.stage_handoff is inferred and was never confirmed
+warn
+  ▲ contract.stage_handoff: still draft but 1 node(s) gate on it (agent.emit); nobody has agreed it   undrafted_contract
+      → nobody has agreed this. Ask both sides whether it is settled.
+
+info
+  i agent.emit: its edge to contract.stage_handoff is inferred and was never confirmed
+
+start with contract.stage_handoff - undrafted_contract · within each block, most urgent first
 
 none of this changed any state. these are questions, not corrections.
+if one of these is true and will stay true, answer it for good with `acknowledge: [<code>]` on the node.
 ```
+
+Severity and urgency are two scales, so they are shown as two things: the
+blocks say how bad, and position inside a block says what to fix first. The
+code sits at the right edge, out of the way of the sentence that says what is
+wrong, and still greppable.
 
 On a graph it found nothing wrong with, it names its own scope rather than
 congratulating you — because most of what "nothing looks wrong" means on a
@@ -656,10 +668,12 @@ nothing looks wrong across 6 nodes.
 checked:
   - structure: gates, references, contracts, cycles, rollups
   - age and staleness: all 6 declaration(s), dated from git
+  - volatility: 6 declaration(s), against this graph's own median
 
 not checked here, so nothing is claimed about it:
   - corrections and drift: this graph has no journal
   - edge provenance: none of 3 edge(s) carry `evidence:`
+  - anything outside trellis: no corroborators are configured
 
 a clean result is only as wide as what it compared.
 ```
@@ -677,15 +691,43 @@ start with: sys.b - dangling_reference
 ```
 
 `trellis review` is the same list as a session, doing what it can do safely and
-routing everything else to you:
+routing everything else to you. It walks nodes rather than findings, so
+everything true about one node arrives together:
 
 ```
-[1/7] warn  contract.x
+$ trellis review
+1 finding across 1 node, most urgent first.
+
+[node 1/1] contract.x
+  contract.x
+  draft, unagreed · 1 node depends on it · contracts.yaml:5
+
+  1 finding on this node
+
+                          0 of 1
+
+(1/1) warn  undrafted_contract
   still draft but 1 node(s) gate on it (consumer); nobody has agreed it
-  -> nobody has agreed this. Ask both sides whether it is settled.
+  → nobody has agreed this. Ask both sides whether it is settled.
 
-  [a] acknowledge  [x] explain  [e] edit  [s] skip  [q] quit
+  * [a] acknowledge  answer it for good; asks why
+                      writes acknowledge: [undrafted_contract] in
+                      contracts.yaml - permanent, and everyone who clones
+                      this sees it
+    [x] explain      show the reasoning
+  * [e] edit         open vim at this node's line
+                      you edit the file directly; the graph is re-read after
+    [s] skip         leave it for now
+                      writes nothing; it returns next run
+    [q] quit         stop here
+                      writes nothing; everything answered so far is kept
+    * changes something on disk
 ```
+
+Every option states what taking it does to the graph, because a verb is not a
+consequence: `acknowledge` reads like dismissing a notice and is in fact a
+permanent ruling written into the YAML that everyone who clones the repo will
+see. The `*` column marks the ones that change something on disk.
 
 `a` writes the acknowledgement and asks why, journaling both. `f` appears only
 where the remedy is an unambiguous status change, and goes through the normal

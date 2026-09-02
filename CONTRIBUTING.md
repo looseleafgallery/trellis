@@ -78,6 +78,14 @@ throughout — no test read those files. `drift` shipped undocumented across fou
 merges. *Assert the anchor before replacing, and prefer editing a file you have
 just read.*
 
+**A tested document can still be half-tested.** "Docs are tested" was true and
+insufficient: the suite parsed every YAML example and checked every command,
+status and export the prose named, and read nothing that showed what a command
+*prints*. Three rendering changes merged in a row, all green, leaving the
+README showing a deleted header line, a gutter glyph now reserved for something
+else, and a menu that had been replaced. *When you add a check over a document,
+say which half of it you covered.*
+
 **Green output is not a green run.** `ruff check` was passed through `tail -1`,
 which showed a trailing "no fixes available" line and hid the error above it.
 *Read the whole output of a check, or read its exit code — not its last line.*
