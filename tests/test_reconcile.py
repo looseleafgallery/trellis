@@ -106,13 +106,38 @@ def test_the_running_total_is_reported(workspace, answers, capsys):
     assert "%" not in out
 
 
-def test_a_reconciled_edge_is_not_asked_again(workspace, answers, capsys):
+# One inferred edge and no `at` anywhere, so the walk offers the same single
+# edge on every day it runs.
+#
+# The shipped example is the wrong graph for this test. Its other edge is
+# `{how: verified, at: <a date>}`, and a verification is stale relative to
+# today - so once that date passed `DEFAULT_STALE_DAYS` the walk had a second
+# edge to offer, the first pass no longer emptied the queue, and the test
+# failed on a tree nobody had touched. The example is right to age; this
+# assertion is about the journal, so it should not be able to.
+GRAPH_ONE_GUESS = """nodes:
+  - id: a
+    title: A
+    status: done
+  - id: c
+    title: C
+    status: not_started
+    gates: {start: a.done}
+    evidence: {a: inferred}
+"""
+
+
+def test_a_reconciled_edge_is_not_asked_again(tmp_path, answers, capsys):
+    graph_dir = tmp_path / "graph"
+    graph_dir.mkdir()
+    (graph_dir / "g.yaml").write_text(GRAPH_ONE_GUESS)
+
     answers("h", "", "q")
-    cli.main(["--graph", str(workspace), "reconcile"])
+    cli.main(["--graph", str(graph_dir), "reconcile"])
     capsys.readouterr()
 
     answers()
-    assert cli.main(["--graph", str(workspace), "reconcile"]) == 0
+    assert cli.main(["--graph", str(graph_dir), "reconcile"]) == 0
     out = capsys.readouterr().out
     assert "nothing new to check" in out
     assert "1 turned out wrong" not in out
