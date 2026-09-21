@@ -4,6 +4,18 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Both triggers above are changes, and this suite can go red without one.
+  # `at:` on an edge is a shelf life, so an annotation that is fresh today is
+  # stale a fortnight from now and a test that reads the calendar flips with no
+  # commit behind it. That is not hypothetical: the suite went red on an
+  # untouched tree and stayed red for eighteen days, because nothing had been
+  # pushed and so nothing had run. A nightly build is what notices a failure
+  # the calendar caused rather than a diff.
+  #
+  # Off the hour: GitHub queues scheduled jobs and the top of the hour is the
+  # busiest slot, so an odd minute starts sooner.
+  schedule:
+    - cron: "17 6 * * *"
 
 permissions:
   contents: read
