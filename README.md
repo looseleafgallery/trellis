@@ -787,6 +787,11 @@ command = ["trellis-linear-check"]
 Snapshot JSON on stdin, findings on stdout, merged into `doctor`. It joins on
 `ref:` — which is what that field was for.
 
+It runs in the project root — the directory holding `trellis.toml` — wherever
+`trellis` was invoked from, so a relative path in `command`, or a file the
+corroborator reads, means the same thing every run. The snapshot carries no
+path; the working directory is where a corroborator finds the repository.
+
 It compares whatever the snapshot carries, which is attributes *and* structure.
 *This node says `in_progress`, Linear says Done* is one finding; *this node
 requires nothing, and the record says its ticket is blocked by another* is the

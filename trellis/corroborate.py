@@ -134,7 +134,11 @@ def _parse(name: str, raw: bytes) -> list[Finding]:
 
 
 def run(
-    name: str, spec: dict, payload: dict, timeout: int = DEFAULT_TIMEOUT
+    name: str,
+    spec: dict,
+    payload: dict,
+    timeout: int = DEFAULT_TIMEOUT,
+    cwd: str | Path | None = None,
 ) -> list[Finding]:
     """Run one corroborator. Failure to run is itself reported as a finding."""
     try:
@@ -143,6 +147,7 @@ def run(
             input=json.dumps(payload).encode(),
             capture_output=True,
             timeout=timeout,
+            cwd=cwd,
         )
     except FileNotFoundError:
         return [_could_not_run(name, f"{spec['command'][0]!r} not found")]
@@ -182,8 +187,16 @@ def _could_not_run(name: str, detail: str) -> Finding:
 def gather(
     graph_dir: str | Path, payload: dict, timeout: int = DEFAULT_TIMEOUT
 ) -> list[Finding]:
-    """Every declared corroborator's findings, in a stable order."""
+    """Every declared corroborator's findings, in a stable order.
+
+    Each runs in the project root. The payload deliberately carries no path,
+    so without this a corroborator that reads the repository - hashing a file a
+    contract names, say - would resolve against wherever `trellis` happened to
+    be invoked, and check a different tree depending on where you stood. The
+    same reason `project_root` resolves rather than trusting the spelling.
+    """
+    root = project_root(graph_dir)
     out: list[Finding] = []
     for name, spec in sorted(load(graph_dir).items()):
-        out.extend(run(name, spec, payload, timeout))
+        out.extend(run(name, spec, payload, timeout, cwd=root))
     return out
