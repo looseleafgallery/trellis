@@ -12,7 +12,7 @@ from datetime import UTC
 from pathlib import Path
 from typing import NamedTuple
 
-from . import corroborate, edit, journal, proposals, queries, style, viz
+from . import corroborate, edit, guard, journal, proposals, queries, style, viz
 from . import delta as delta_mod
 from . import evidence as evidence_mod
 from . import snapshot as snapshot_mod
@@ -524,6 +524,52 @@ def _ask_why(retreats: list[tuple[str, object, object]]) -> str | None:
     return answer or None
 
 
+def _changes(graph: Graph, delta) -> list[tuple[str, str, object, object]]:
+    """A delta's changes to existing nodes, as `(node, field, before, after)`."""
+    return [
+        (c.node, c.field, getattr(graph.get(c.node), c.field, None), c.value)
+        for c in delta.changes
+        if c.node in graph
+    ]
+
+
+def _guard_agreed(graph, graph_dir, changes, reason: str | None):
+    """Stop a change to an agreed contract that no person is making.
+
+    Returns `(exit code, reason)`. An exit code means nothing may be written.
+    The reason can be asked for here, at a terminal, and is then the one to
+    journal. Every route that writes a contract's version or status calls this
+    with the same shape of change, which is what keeps accepting a change from
+    being a way around making it.
+    """
+    items = guard.guarded(graph, journal.last_status(graph_dir), changes)
+    if not items:
+        return None, reason
+    try:
+        mode = guard.mode(graph_dir)
+    except guard.GuardError as exc:
+        print(f"error: {exc}\nnothing was written", file=sys.stderr)
+        return 2, reason
+    if mode == "tty" and not sys.stdin.isatty():
+        for item in items:
+            print(item.refusal(), file=sys.stderr)
+        print("nothing was written", file=sys.stderr)
+        return 2, reason
+    if not reason and mode == "tty":
+        for item in items:
+            print(f"  {item.node} is {item.status}, and this changes it ({item.what})")
+        try:
+            reason = input("why? ").strip() or None
+        except EOFError:
+            reason = None
+    if not reason:
+        for item in items:
+            print(item.needs_reason(), file=sys.stderr)
+        print("nothing was written", file=sys.stderr)
+        return 2, reason
+    return None, reason
+
+
 def _run_write(args, graph, cache, graph_dir, delta, origin: str, text: str) -> int:
     """Validate -> preview -> confirm -> write. Every write goes through here."""
     delta = delta_mod.drop_noops(delta_mod.normalize(delta), graph)
@@ -567,6 +613,9 @@ def _run_write(args, graph, cache, graph_dir, delta, origin: str, text: str) -> 
         return 0
 
     reason = getattr(args, "because", None)
+    refused, reason = _guard_agreed(graph, graph_dir, _changes(graph, delta), reason)
+    if refused is not None:
+        return refused
     if retreats and not reason:
         reason = _ask_why(retreats)
 
@@ -701,6 +750,13 @@ def cmd_accept(args) -> int:
     if args.dry_run:
         print("\ndry run - nothing written")
         return 0
+    # The reason the proposer gave does not count here: whoever accepts a
+    # change to an agreed contract is the person the guard is asking for.
+    refused, because = _guard_agreed(
+        graph, graph_dir, _changes(graph, delta), args.because
+    )
+    if refused is not None:
+        return refused
     if not args.yes and not _confirm("\napply?"):
         print("not applied")
         return 1
@@ -710,11 +766,11 @@ def cmd_accept(args) -> int:
     except edit.EditError as exc:
         print(f"error: {exc}\nnothing was written", file=sys.stderr)
         return 2
-    reason = args.because or proposal.why
+    reason = because or proposal.why
     journal.record(
         graph_dir, f"accept:{proposal.id}", proposal.text or "", writes, [], reason
     )
-    proposals.decide(graph_dir, proposal.id, "accepted", args.because or "")
+    proposals.decide(graph_dir, proposal.id, "accepted", because or "")
     cache.save()
     print(f"\nwrote {len(writes)} change(s) to {len({w.path for w in writes})} file(s)")
     return 0
@@ -1212,7 +1268,7 @@ def cmd_doctor(args) -> int:
             )
         )
     for item in journal.drift(graph_dir, graph):
-        if item.is_correction:
+        if item.field == "status" and item.is_correction:
             findings.append(
                 (
                     "warn",
@@ -1221,7 +1277,20 @@ def cmd_doctor(args) -> int:
                     f"trellis - an unrecorded correction, and its reason is gone",
                 )
             )
-        else:
+        elif item.field == "version" and graph.referrers_of(item.node):
+            # Ranked with a walked-back status: it is the edit that changes what
+            # a contract means to everything gating on it, made where nothing
+            # previewed it.
+            consumers = graph.referrers_of(item.node)
+            findings.append(
+                (
+                    "warn",
+                    item.node,
+                    f"version changed outside trellis ({item.describe()}), and "
+                    f"{_listed(list(consumers))} gate on it",
+                )
+            )
+        elif item.field == "status":
             findings.append(
                 (
                     "info",
@@ -1230,6 +1299,24 @@ def cmd_doctor(args) -> int:
                     f"says {item.actual!r}",
                 )
             )
+        else:
+            findings.append(
+                (
+                    "info",
+                    item.node,
+                    f"{item.field} changed outside trellis: {item.describe()}",
+                )
+            )
+    for node_id in guard.unbaselined(graph, journal.last_status(graph_dir)):
+        findings.append(
+            (
+                "warn",
+                node_id,
+                f"is {graph.get(node_id).status}, and trellis has never written its "
+                f"status - the guard on agreed contracts reads the file alone, so a "
+                f"hand walk-back lowers it. `trellis baseline` records one",
+            )
+        )
     for node_id, count in sorted(journal.correction_counts(graph_dir).items()):
         if count >= 2:
             findings.append(
@@ -1387,80 +1474,153 @@ def cmd_doctor(args) -> int:
     return 1 if any(f[0] == "error" for f in findings) else 0
 
 
+def _accept_drift(args, graph, graph_dir, drifted: list) -> int:
+    """Record what the file now says for one field, and why.
+
+    One field at a time, and never without a reason. Accepting every drifted
+    node at once, reason optional, made accept the quiet way to launder a hand
+    edit: change the file, accept, and the journal says trellis wrote it.
+    """
+    targets = ", ".join(d.target for d in drifted)
+    if args.accept is True:
+        print(
+            f"error: name the field to accept - drifted: {targets}\n"
+            f"  trellis drift --accept <node>.<field> --because '...'\n"
+            f"nothing was written",
+            file=sys.stderr,
+        )
+        return 2
+    item = next((d for d in drifted if d.target == args.accept), None)
+    if item is None:
+        print(
+            f"error: {args.accept} is not drifting - drifted: {targets}\n"
+            f"nothing was written",
+            file=sys.stderr,
+        )
+        return 2
+    if not args.because:
+        print(
+            "error: --because is required to accept - the hand edit threw away "
+            "why it was made,\nand accepting is the only moment left to record "
+            "it.\nnothing was written",
+            file=sys.stderr,
+        )
+        return 2
+    # Gated as writing the file's value through `set` would be, from what
+    # trellis last wrote.
+    change = (item.node, item.field, item.journaled, item.actual)
+    refused, reason = _guard_agreed(graph, graph_dir, [change], args.because)
+    if refused is not None:
+        return refused
+
+    journal.record(
+        graph_dir,
+        "accept",
+        "accepted an edit made outside trellis",
+        [
+            edit.WriteResult(
+                node=item.node,
+                field=item.field,
+                before=item.journaled,
+                after=item.actual,
+                path=str(graph_dir / graph.get(item.node).source),
+            )
+        ],
+        reason=reason,
+    )
+    print(f"accepted {item.target} into the journal: {item.describe()}")
+    return 0
+
+
+def cmd_baseline(args) -> int:
+    """Record the status every agreed contract has now, changing no YAML.
+
+    The guard on agreed contracts counts the stricter of the file and the last
+    status trellis wrote. For a contract written by hand there is no last
+    status, so the file is all it has, and a hand round trip through `draft`
+    lowers it without trace. This gives it something to count.
+
+    Only as honest as the moment it runs: a contract already walked back by
+    hand is not `agreed` in its file, so it is not recorded, and a baseline
+    taken after a round trip records the end of it. Nothing is changed, so
+    nothing is guarded.
+    """
+    graph, _cache, graph_dir = _load(args)
+    missing = guard.unbaselined(graph, journal.last_status(graph_dir))
+    if not missing:
+        print(
+            "nothing to record - every agreed or frozen contract already has a "
+            "status trellis wrote"
+        )
+        return 0
+    writes = [
+        edit.WriteResult(
+            node=node_id,
+            field="status",
+            before=None,
+            after=graph.get(node_id).status,
+            path=str(graph_dir / graph.get(node_id).source),
+        )
+        for node_id in missing
+    ]
+    journal.record(
+        graph_dir,
+        "baseline",
+        "recorded the status of agreed contracts trellis had never written",
+        writes,
+    )
+    print(
+        f"recorded {len(writes)} contract status(es) in the journal, no YAML changed:"
+    )
+    for write in writes:
+        print(f"  {write.node}: {write.after}")
+    return 0
+
+
 def cmd_drift(args) -> int:
     """Has anything been edited outside the loop since trellis last wrote it?"""
     graph, cache, graph_dir = _load(args)
     drifted = journal.drift(graph_dir, graph)
     cache.save()
 
-    if args.accept and drifted:
-        # Reconciling by re-running `set` does not work: the file already says
-        # what you would be setting it to, so the change is a no-op and nothing
-        # is journaled. Accepting is its own act — it records what the file now
-        # says, and why, which is the part a hand edit threw away.
-        writes = [
-            edit.WriteResult(
-                node=item.node,
-                field="status",
-                before=item.journaled,
-                after=item.actual,
-                path=str(graph_dir / graph.get(item.node).source),
-            )
-            for item in drifted
-        ]
-        journal.record(
-            graph_dir,
-            "accept",
-            "accepted an edit made outside trellis",
-            writes,
-            reason=args.because,
-        )
-        print(f"accepted {len(drifted)} edit(s) into the journal.")
-        for item in drifted:
-            print(f"  {item.node}: {item.journaled!r} -> {item.actual!r}")
-        if not args.because:
-            print(
-                "\nno reason recorded. `--because` is what keeps a correction from "
-                "becoming\na thing that simply happened."
-            )
-        return 0
+    if args.accept is not None and drifted:
+        return _accept_drift(args, graph, graph_dir, drifted)
 
     if args.json:
         _emit([d.as_dict() for d in drifted], True)
         return 1 if drifted else 0
 
     if not drifted:
-        managed = len(journal.last_written(graph_dir))
+        managed = len({node for node, _field in journal.last_written(graph_dir)})
         if not managed:
             # An absence where we looked is not proof of absence anywhere.
             print(
-                "nothing to compare against - no status writes are recorded in "
-                "this graph's journal.\n"
-                "drift is only detectable for nodes changed through `set` or `log`."
+                "nothing to compare against - no writes are recorded in this "
+                "graph's journal.\n"
+                "drift is only detectable for fields changed through `set` or `log`."
             )
         else:
             print(f"no drift - all {managed} node(s) trellis has written still agree")
         return 0
 
     corrections = [d for d in drifted if d.is_correction]
-    print(f"{len(drifted)} node(s) changed outside trellis:\n")
+    print(f"{len(drifted)} field(s) changed outside trellis:\n")
     for item in drifted:
         mark = "!" if item.is_correction else "."
-        print(
-            f"  {mark} {item.node}: trellis wrote {item.journaled!r}, "
-            f"file says {item.actual!r}"
-        )
+        print(f"  {mark} {item.target}: {item.describe()}")
         print(f"      last written {item.at}")
     if corrections:
         print(
-            f"\n{len(corrections)} of these walked a status backwards. Those are "
+            f"\n{len(corrections)} of these walked a field backwards. Those are "
             "corrections,\nand the reason for each was never recorded."
         )
     print(
         "\ntrellis owns the state machine; edits made outside it are yours to "
         "reconcile.\n"
-        "  trellis drift --accept --because '...'   record what the file now says\n"
-        "  trellis set <node> status=...            change it back through the loop"
+        "  trellis drift --accept <node>.<field> --because '...'   record what "
+        "the file now says\n"
+        "  trellis set <node> <field>=...                         change it back "
+        "through the loop"
     )
     return 1
 
@@ -2816,14 +2976,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_trust)
 
     p = sub.add_parser(
+        "baseline",
+        help="record the status of agreed contracts, so the guard has one to count",
+    )
+    p.set_defaults(func=cmd_baseline)
+
+    p = sub.add_parser(
         "drift", help="what has been edited outside trellis since it last wrote"
     )
     p.add_argument(
         "--accept",
-        action="store_true",
-        help="record the current file state in the journal, ending the drift",
+        nargs="?",
+        const=True,
+        metavar="NODE.FIELD",
+        help="record what the file now says for one field, ending its drift",
     )
-    p.add_argument("--because", metavar="REASON", help="why the edit was made")
+    p.add_argument(
+        "--because", metavar="REASON", help="why the edit was made (required)"
+    )
     p.set_defaults(func=cmd_drift)
 
     p = sub.add_parser(
