@@ -90,6 +90,20 @@ say which half of it you covered.*
 which showed a trailing "no fixes available" line and hid the error above it.
 *Read the whole output of a check, or read its exit code — not its last line.*
 
+**A test can pass for two weeks and then fail on a tree nobody touched.** A
+reconcile test asserted that an answered edge is not offered again, using the
+shipped `examples/agent-loop` graph. That graph's other edge is
+`{how: verified, at: 2026-08-20}`, and a verification is stale *relative to
+today* — so fourteen days after that date the walk gained a second edge to
+offer, one pass stopped emptying the queue, and the assertion broke with no
+commit behind it. Nothing was wrong with the example: `at` is a shelf life, and
+ageing is the behaviour it exists to have. The test had quietly taken a
+dependency on the day it ran. *A fixture with an `at` in it is a fixture with a
+timer on it. Where the assertion is not about age, leave the date out —
+`{how: verified}` never expires.* It went unnoticed because CI runs on push and
+pull request only, so a failure the calendar causes waits for someone else's
+change to surface it.
+
 **A tool's own diagnostics can be as wrong as a user's declaration.** `trust`
 reported "not in git, or never committed" from a lookup that could not have
 succeeded; `drift` reported "trellis has not written any status yet" when it
