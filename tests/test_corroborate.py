@@ -149,6 +149,41 @@ def test_the_clamp_does_not_double_its_full_stop(project):
 # -- failing is a finding, never a silence -----------------------------------
 
 
+def test_a_corroborator_runs_in_the_project_root(project, monkeypatch, tmp_path):
+    """Wherever trellis is invoked from, a corroborator starts in the project
+    root, so a path it reads means the same file every run (#101)."""
+    declare(
+        project,
+        "where",
+        "import json,os\nprint(json.dumps([{'node': 'a', 'message': os.getcwd()}]))\n",
+    )
+    elsewhere = tmp_path / "somewhere" / "else"
+    elsewhere.mkdir(parents=True)
+    monkeypatch.chdir(elsewhere)
+
+    found = corroborate.gather(project, {})
+    assert Path(found[0].message).resolve() == project.parent.resolve()
+
+
+def test_a_relative_script_in_the_config_resolves_from_the_project_root(
+    project, monkeypatch, tmp_path
+):
+    """`command = ["python", "checks/x.py"]` used to work only from the root."""
+    (project.parent / "checks").mkdir()
+    (project.parent / "checks" / "x.py").write_text(
+        "import json\nprint(json.dumps([{'node': 'a', 'message': 'ran'}]))\n"
+    )
+    (project.parent / "trellis.toml").write_text(
+        f'[corroborator.x]\ncommand = ["{sys.executable}", "checks/x.py"]\n'
+    )
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    found = corroborate.gather(project, {})
+    assert [f.message for f in found] == ["ran"]
+
+
 def test_a_missing_program_is_reported_not_swallowed(project):
     (project.parent / "trellis.toml").write_text(
         '[corroborator.linear]\ncommand = ["definitely-not-a-real-program"]\n'
