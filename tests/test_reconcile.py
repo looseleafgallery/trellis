@@ -107,12 +107,16 @@ def test_the_running_total_is_reported(workspace, answers, capsys):
 
 
 def test_a_reconciled_edge_is_not_asked_again(workspace, answers, capsys):
+    # About unconfirmed edges only. The example's one verified edge is dated, so
+    # with the default window it ages back into the queue as the calendar moves:
+    # this passed until 14 days after that date and failed every day since.
+    never_stale = ["--stale-after", "100000"]
     answers("h", "", "q")
-    cli.main(["--graph", str(workspace), "reconcile"])
+    cli.main(["--graph", str(workspace), "reconcile", *never_stale])
     capsys.readouterr()
 
     answers()
-    assert cli.main(["--graph", str(workspace), "reconcile"]) == 0
+    assert cli.main(["--graph", str(workspace), "reconcile", *never_stale]) == 0
     out = capsys.readouterr().out
     assert "nothing new to check" in out
     assert "1 turned out wrong" not in out
