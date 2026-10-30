@@ -762,6 +762,7 @@ def test_accepting_records_the_edit_and_ends_the_drift(workspace):
             str(workspace),
             "drift",
             "--accept",
+            "tools.sandbox.status",
             "--because",
             "reverted by hand while debugging",
         ]
@@ -772,13 +773,21 @@ def test_accepting_records_the_edit_and_ends_the_drift(workspace):
     assert entry["reason"] == "reverted by hand while debugging"
 
 
-def test_accepting_without_a_reason_says_what_was_lost(workspace, capsys):
+def test_accepting_without_a_reason_is_refused(workspace, capsys):
+    """It used to be accepted with a note that the reason was lost. Accepting is
+    the last moment the reason can be recorded, so it is now required (#100)."""
     cli.main(["--graph", str(workspace), "set", "tools.sandbox", "status=done", "-y"])
     hand_edit(workspace, "tools.sandbox", "in_progress")
+    entries = len(journal.read(workspace))
     capsys.readouterr()
 
-    cli.main(["--graph", str(workspace), "drift", "--accept"])
-    assert "no reason recorded" in capsys.readouterr().out
+    code = cli.main(
+        ["--graph", str(workspace), "drift", "--accept", "tools.sandbox.status"]
+    )
+    assert code != 0
+    assert "--because is required" in capsys.readouterr().err
+    assert len(journal.read(workspace)) == entries
+    assert journal.drift(workspace, load_graph(workspace))
 
 
 def test_changing_it_back_through_the_loop_also_clears_drift(workspace):
@@ -798,7 +807,7 @@ def test_drift_command_exits_nonzero_and_explains_ownership(workspace, capsys):
     out = capsys.readouterr().out
     assert "changed outside trellis" in out
     assert "yours to reconcile" in out
-    assert "walked a status backwards" in out
+    assert "walked a field backwards" in out
 
 
 def test_drift_command_is_honest_when_it_cannot_tell(workspace, capsys):
@@ -1338,7 +1347,7 @@ def test_drift_does_not_claim_nothing_was_ever_written(project, capsys):
     different question, and a file on disk may say yes."""
     cli.main(["--graph", str(project), "drift"])
     out = capsys.readouterr().out
-    assert "no status writes are recorded in this graph's journal" in out
+    assert "no writes are recorded in this graph's journal" in out
     assert "has not written any status yet" not in out
 
 

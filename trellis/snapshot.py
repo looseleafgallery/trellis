@@ -53,7 +53,8 @@ CONFIG_NAME = "trellis.toml"
 # This changes when the payload gains, loses or renames a key - the only event
 # a plugin can be broken by. Bumped so a plugin can refuse a payload it does
 # not understand instead of reading a missing key as an empty one.
-PAYLOAD_VERSION = 1
+# 2: each `trust.drift` row names its `field` (#100).
+PAYLOAD_VERSION = 2
 
 
 class SnapshotError(RuntimeError):

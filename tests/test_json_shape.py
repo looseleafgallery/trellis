@@ -366,3 +366,20 @@ def test_brief_can_skip_the_graph_summary(workspace, capsys):
     out = capsys.readouterr().out
     assert "This graph, right now" not in out
     assert "Working with trellis" in out
+
+
+DRIFT_ROW_KEYS = {"node", "field", "journaled", "actual", "at", "is_correction"}
+
+
+def test_a_drift_row_in_the_payload_names_its_field(workspace):
+    """Drift is per field since #100, so a row without its field cannot be acted
+    on. The key was added on purpose, with `payload_version` moving to match."""
+    cli.main(["--graph", str(workspace), "set", "consumer", "title=Consumer2", "-y"])
+    path = next(
+        p for p in workspace.glob("*.yaml") if "title: Consumer2" in p.read_text()
+    )
+    path.write_text(path.read_text().replace("title: Consumer2", "title: By hand"))
+
+    rows = _payload(workspace)["trust"]["drift"]
+    assert [set(row) for row in rows] == [DRIFT_ROW_KEYS]
+    assert rows[0]["field"] == "title"

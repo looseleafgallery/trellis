@@ -459,10 +459,20 @@ structure (gates, contracts, published facts) only.
 trellis owns the state machine. If a status is edited around it — by you, by
 the user, by another tool — that is **drift**, and it is the editor's to
 reconcile, not something the tool silently absorbs. Run `trellis drift` to see
-it. If the user made the edit deliberately, `trellis drift --accept --because
-"..."` records what the file now says and why. Never accept drift on the user's
-behalf without asking why it happened: the reason is the whole point, and it is
-the part a hand edit threw away.
+it. If the user made the edit deliberately, `trellis drift --accept
+<node>.<field> --because "..."` records what the file now says for that field,
+and why. Never accept drift on the user's behalf without asking why it
+happened: the reason is the whole point, and it is the part a hand edit threw
+away.
+
+**An agreed contract is the user's to change, not yours.** Moving the
+`version` of an `agreed` or `frozen` contract, or walking its status back, is
+refused without a terminal. When your work needs a contract to change, queue it
+with `--propose --because "..."` and tell the user; that is the route, not an
+obstacle. Do not look for another way to make the change - hand-editing the
+file, bumping the version instead, walking the status back first. The check
+cannot see every route, and finding one it misses would be deciding for the
+user exactly what it exists to leave to them.
 
 ## When the person is not there
 

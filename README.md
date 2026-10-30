@@ -422,27 +422,68 @@ Hand editing is still allowed. The drift is yours:
 
 ```
 $ trellis drift
-1 node(s) changed outside trellis:
+1 field(s) changed outside trellis:
 
-  ! tools.sandbox: trellis wrote 'done', file says 'in_progress'
+  ! tools.sandbox.status: trellis wrote 'done', file says 'in_progress'
       last written 2026-08-21T18:52:53+00:00
 
-1 of these walked a status backwards. Those are corrections,
+1 of these walked a field backwards. Those are corrections,
 and the reason for each was never recorded.
 ```
 
-Only nodes trellis has actually written are compared — a node that has never
-been through `set` is not drifting, it simply is not managed by the tool.
+Every field `set` can write is compared — `status`, `version`, `title`,
+`parent`, `awaiting`, `ref` — but only where trellis has actually written it. A
+field that has never been through `set` is not drifting, it simply is not
+managed by the tool. A field deleted by hand reads as absent and is compared
+like any other. A status walked back is a correction, and so is a contract's
+version moved down.
+
 Reconcile either by changing it back through the loop, or by accepting the edit
-and recording what the file now says:
+and recording what the file now says — one field at a time, and always with a
+reason:
 
 ```
-trellis drift --accept --because "reverted by hand while debugging"
+trellis drift --accept tools.sandbox.status --because "reverted by hand while debugging"
 ```
 
 Accepting is a separate act rather than "just run `set` again", because the
-file already says what you would be setting it to. Drift tracks status only;
-structural edits are always by hand.
+file already says what you would be setting it to. It names one field because
+accepting everything at once made it the quiet way to launder a hand edit:
+change the file, accept, and the journal says trellis wrote it. Structural
+edits — gates, `satisfied_by`, published facts — are always by hand.
+
+### An agreed contract changes when a person changes it
+
+The working split trellis is built for: agents implement inside contracts, and
+a person decides when a contract changes. So on a contract that is `agreed` or
+`frozen`, moving its `version` or walking its status back to `draft` or
+`proposed` needs an interactive terminal and a reason. Without one:
+
+```
+$ trellis set contract.tool_schema version=3 -y
+refused: contract.tool_schema is agreed, and this changes it (version 2 -> 3). A person has to do this at a terminal, or queue it with --propose for one to accept. To allow it without a terminal, set [loop] agreed_contracts = "because" in trellis.toml.
+```
+
+The same check applies to every route that can make the change — `set`, `log`,
+`accept` of a queued proposal, and `drift --accept` of a hand edit — so
+accepting a change is never a way around making it. `--propose` is never
+refused: queuing is the route for an agent, and the person accepting is who the
+check is for. `agreed` to `frozen` moves forward and is not checked.
+
+A contract counts as agreed if its file says so **or** the last status trellis
+wrote for it does. Otherwise hand-editing it to `draft`, making the change and
+hand-editing it back would leave no drift and no person involved. For a
+contract whose status trellis has never written, the file is all there is to
+go on.
+
+A terminal is not proof of a person, but reaching one is a deliberate act
+rather than drift. Where a reason is enough, say so:
+
+```toml
+# trellis.toml
+[loop]
+agreed_contracts = "because"   # default "tty"
+```
 
 ### Corrections are not revisions
 

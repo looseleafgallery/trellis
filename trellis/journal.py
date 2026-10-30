@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .delta import EDITABLE_FIELDS
 from .loader import project_root
 from .model import Graph, is_retreat
 
@@ -403,11 +404,30 @@ def correction_counts(graph_dir: str | Path) -> dict[str, int]:
     return counts
 
 
+# What drift compares: every field `set` can write. A hand edit to `version`
+# bypasses the loop exactly as one to `status` does, and watching only status
+# meant the edit that changes what a contract means went unseen.
+# `acknowledge` is journaled too and deliberately not here: an acknowledgement
+# lives on the node with its reason, and has its own accounting.
+TRACKED_FIELDS = EDITABLE_FIELDS
+
+
+def _absent(value: object) -> bool:
+    """A field the file does not declare. The model reads it as None or ""."""
+    return value is None or value == ""
+
+
+def _version_number(value: object) -> int:
+    # The engine exports a missing version as 0, so removing one is moving it
+    # down to 0 as far as every gate that reads it is concerned.
+    return value if isinstance(value, int) else 0
+
+
 @dataclass
 class Drift:
-    """A node whose file disagrees with the last thing trellis wrote to it.
+    """A field whose file value disagrees with the last thing trellis wrote to it.
 
-    trellis owns the state machine. Editing a status by hand is allowed and
+    trellis owns the state machine. Editing a field by hand is allowed and
     sometimes the right thing, but it happens outside the loop: no preview, no
     verification, no journal entry, and — when the edit walks a status
     backwards — no recorded reason. That is drift, and it is the editor's to
@@ -415,22 +435,44 @@ class Drift:
     """
 
     node: str
+    field: str
     journaled: object
     actual: object
     at: str
 
     @property
+    def target(self) -> str:
+        """How `drift --accept` names this one: `<node>.<field>`."""
+        return f"{self.node}.{self.field}"
+
+    @property
     def is_correction(self) -> bool:
-        """Whether the hand edit walked the status backwards.
+        """Whether the hand edit walked the field backwards.
 
         Worse than ordinary drift: a correction carries a lesson, and this one
-        was never written down.
+        was never written down. Two fields have a direction: a status, along
+        its own track, and a contract's version, which only means anything as
+        a number that goes up. Every other field just changed.
         """
-        return is_retreat(self.journaled, self.actual)
+        if self.field == "status":
+            return is_retreat(self.journaled, self.actual)
+        if self.field == "version":
+            return _version_number(self.actual) < _version_number(self.journaled)
+        return False
+
+    def describe(self) -> str:
+        wrote = (
+            "trellis cleared it"
+            if _absent(self.journaled)
+            else f"trellis wrote {self.journaled!r}"
+        )
+        says = "file has none" if _absent(self.actual) else f"file says {self.actual!r}"
+        return f"{wrote}, {says}"
 
     def as_dict(self) -> dict:
         return {
             "node": self.node,
+            "field": self.field,
             "journaled": self.journaled,
             "actual": self.actual,
             "at": self.at,
@@ -438,31 +480,49 @@ class Drift:
         }
 
 
-def last_written(graph_dir: str | Path) -> dict[str, tuple[object, str]]:
-    """The last status trellis itself wrote for each node, and when."""
-    out: dict[str, tuple[object, str]] = {}
+def last_written(graph_dir: str | Path) -> dict[tuple[str, str], tuple[object, str]]:
+    """The last value trellis itself wrote for each (node, field), and when.
+
+    Every entry counts - `set`, `log`, an accepted proposal, an accepted drift
+    - because each is trellis writing that value, and the latest one is what
+    the file should still say.
+    """
+    out: dict[tuple[str, str], tuple[object, str]] = {}
     for entry in read(graph_dir):
         for write in entry.get("writes") or []:
-            if write.get("field") != "status":
-                continue
+            field = write.get("field")
             node = write.get("node")
-            if node:
-                out[node] = (write.get("after"), entry.get("at", ""))
+            if node and field in TRACKED_FIELDS:
+                out[(node, field)] = (write.get("after"), entry.get("at", ""))
     return out
 
 
-def drift(graph_dir: str | Path, graph: Graph) -> list[Drift]:
-    """Nodes edited outside the loop since trellis last wrote them.
+def last_status(graph_dir: str | Path) -> dict[str, object]:
+    """The last status trellis wrote for each node."""
+    return {
+        node: value
+        for (node, field), (value, _at) in last_written(graph_dir).items()
+        if field == "status"
+    }
 
-    Only nodes trellis has actually written are considered. A node that has
+
+def drift(graph_dir: str | Path, graph: Graph) -> list[Drift]:
+    """Fields edited outside the loop since trellis last wrote them.
+
+    Only fields trellis has actually written are considered. A field that has
     never been through `set` or `log` is not drifting — it is simply not being
     managed through the tool, which is a different thing and not a complaint.
+    A field deleted from the file is compared like any other: it reads as
+    absent, and absent is not what trellis wrote.
     """
     out: list[Drift] = []
-    for node_id, (written, at) in last_written(graph_dir).items():
+    for (node_id, field), (written, at) in last_written(graph_dir).items():
         if node_id not in graph:
             continue
-        actual = graph.get(node_id).status
-        if actual != written:
-            out.append(Drift(node=node_id, journaled=written, actual=actual, at=at))
-    return sorted(out, key=lambda d: (not d.is_correction, d.node))
+        actual = getattr(graph.get(node_id), field, None)
+        if actual == written or (_absent(actual) and _absent(written)):
+            continue
+        out.append(
+            Drift(node=node_id, field=field, journaled=written, actual=actual, at=at)
+        )
+    return sorted(out, key=lambda d: (not d.is_correction, d.node, d.field))
