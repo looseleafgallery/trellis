@@ -96,6 +96,23 @@ def _counted_status(file_status: object, journaled_status: object) -> str | None
     return None
 
 
+def unbaselined(graph: Graph, journaled_status: dict[str, object]) -> list[str]:
+    """Agreed or frozen contracts whose status trellis has never written.
+
+    For these the guard has only the file to go on, so a hand walk-back lowers
+    it with nothing left behind: no journaled status to count, no drift to
+    report. Most contracts start here, because a contract is usually written
+    as `agreed` by hand. `trellis baseline` records one.
+    """
+    return sorted(
+        node.id
+        for node in graph.nodes.values()
+        if node.kind == "contract"
+        and node.status in GUARDED_STATUSES
+        and node.id not in journaled_status
+    )
+
+
 def _shown(value: object) -> str:
     return "none" if value is None or value == "" else str(value)
 

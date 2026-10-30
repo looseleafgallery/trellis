@@ -1307,6 +1307,16 @@ def cmd_doctor(args) -> int:
                     f"{item.field} changed outside trellis: {item.describe()}",
                 )
             )
+    for node_id in guard.unbaselined(graph, journal.last_status(graph_dir)):
+        findings.append(
+            (
+                "warn",
+                node_id,
+                f"is {graph.get(node_id).status}, and trellis has never written its "
+                f"status - the guard on agreed contracts reads the file alone, so a "
+                f"hand walk-back lowers it. `trellis baseline` records one",
+            )
+        )
     for node_id, count in sorted(journal.correction_counts(graph_dir).items()):
         if count >= 2:
             findings.append(
@@ -1519,6 +1529,51 @@ def _accept_drift(args, graph, graph_dir, drifted: list) -> int:
         reason=reason,
     )
     print(f"accepted {item.target} into the journal: {item.describe()}")
+    return 0
+
+
+def cmd_baseline(args) -> int:
+    """Record the status every agreed contract has now, changing no YAML.
+
+    The guard on agreed contracts counts the stricter of the file and the last
+    status trellis wrote. For a contract written by hand there is no last
+    status, so the file is all it has, and a hand round trip through `draft`
+    lowers it without trace. This gives it something to count.
+
+    Only as honest as the moment it runs: a contract already walked back by
+    hand is not `agreed` in its file, so it is not recorded, and a baseline
+    taken after a round trip records the end of it. Nothing is changed, so
+    nothing is guarded.
+    """
+    graph, _cache, graph_dir = _load(args)
+    missing = guard.unbaselined(graph, journal.last_status(graph_dir))
+    if not missing:
+        print(
+            "nothing to record - every agreed or frozen contract already has a "
+            "status trellis wrote"
+        )
+        return 0
+    writes = [
+        edit.WriteResult(
+            node=node_id,
+            field="status",
+            before=None,
+            after=graph.get(node_id).status,
+            path=str(graph_dir / graph.get(node_id).source),
+        )
+        for node_id in missing
+    ]
+    journal.record(
+        graph_dir,
+        "baseline",
+        "recorded the status of agreed contracts trellis had never written",
+        writes,
+    )
+    print(
+        f"recorded {len(writes)} contract status(es) in the journal, no YAML changed:"
+    )
+    for write in writes:
+        print(f"  {write.node}: {write.after}")
     return 0
 
 
@@ -2919,6 +2974,12 @@ def build_parser() -> argparse.ArgumentParser:
         f"(default {evidence_mod.DEFAULT_STALE_DAYS})",
     )
     p.set_defaults(func=cmd_trust)
+
+    p = sub.add_parser(
+        "baseline",
+        help="record the status of agreed contracts, so the guard has one to count",
+    )
+    p.set_defaults(func=cmd_baseline)
 
     p = sub.add_parser(
         "drift", help="what has been edited outside trellis since it last wrote"

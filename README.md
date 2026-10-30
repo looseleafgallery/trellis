@@ -254,6 +254,7 @@ owed, never *who* owes it.
 | `trellis log "<what happened>"`           | describe it in prose; a model proposes the delta                      |
 | `trellis history`                         | what has been applied, and why                                        |
 | `trellis drift`                           | what was changed around the tool since it last wrote                  |
+| `trellis baseline`                        | record agreed contracts' status, so a hand walk-back cannot hide      |
 | `trellis trust`                           | challenge the declaration: what is stale, what churns                 |
 | `trellis reconcile`                       | walk the unconfirmed edges, most depended on first                    |
 | `trellis doctor`                          | everything that looks wrong, with what to do about it                 |
@@ -472,9 +473,23 @@ check is for. `agreed` to `frozen` moves forward and is not checked.
 
 A contract counts as agreed if its file says so **or** the last status trellis
 wrote for it does. Otherwise hand-editing it to `draft`, making the change and
-hand-editing it back would leave no drift and no person involved. For a
-contract whose status trellis has never written, the file is all there is to
-go on.
+hand-editing it back would leave no drift and no person involved.
+
+That needs a status trellis wrote, and a contract written as `agreed` by hand -
+most of them - has none, so the file is all the check has. `doctor` warns about
+each one, and `trellis baseline` records the status every agreed or frozen
+contract has now, changing no YAML:
+
+```
+$ trellis baseline
+recorded 2 contract status(es) in the journal, no YAML changed:
+  contract.tool_schema: agreed
+  contract.trace_format: agreed
+```
+
+It is only as honest as the moment it runs. A contract already walked back by
+hand is not `agreed` in its file, so it is not recorded, and nothing here sees
+a round trip that was committed to git along the way.
 
 A terminal is not proof of a person, but reaching one is a deliberate act
 rather than drift. Where a reason is enough, say so:

@@ -472,7 +472,9 @@ with `--propose --because "..."` and tell the user; that is the route, not an
 obstacle. Do not look for another way to make the change - hand-editing the
 file, bumping the version instead, walking the status back first. The check
 cannot see every route, and finding one it misses would be deciding for the
-user exactly what it exists to leave to them.
+user exactly what it exists to leave to them. If `doctor` says an agreed
+contract has no status trellis wrote, run `trellis baseline` before you start
+work, not after: it records what the file says at that moment.
 
 ## When the person is not there
 

@@ -10,6 +10,13 @@
   so, so a hand round trip through `draft` does not lower the check.
   `[loop] agreed_contracts = "because"` in `trellis.toml` lets a reason alone
   be enough.
+- **`trellis baseline` gives the guard something to count (#100).** A contract
+  written as `agreed` by hand has no status trellis wrote, so the guard had only
+  the file, and a hand round trip through `draft` lowered it without trace.
+  `baseline` records the current status of every agreed or frozen contract that
+  has none, changing no YAML, and `doctor` warns about each one until it has.
+  It is only as honest as the moment it runs: a contract already walked back is
+  not recorded, and a round trip committed to git is not seen.
 - **Drift covers every field `set` writes, not just `status` (#100).** A hand
   edit to `version`, `title`, `parent`, `awaiting` or `ref` used to go unseen;
   the edit that changes what a contract means was exactly the one drift could

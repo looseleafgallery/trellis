@@ -6,6 +6,7 @@ terminal and a reason unless `trellis.toml` loosens it - through every route
 that can make the change, so accepting it is never a way around making it.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -395,3 +396,78 @@ def test_an_accepted_walk_back_does_lower_it(workspace, terminal, no_terminal):
 
     no_terminal()
     assert trellis(workspace, "set", "contract.stage_handoff", "version=2", "-y") == 0
+
+
+# -- a baseline for contracts written by hand ----------------------------------
+
+
+def doctor_warnings(graph_dir, capsys):
+    capsys.readouterr()
+    trellis(graph_dir, "--json", "doctor")
+    return [
+        r["node"]
+        for r in json.loads(capsys.readouterr().out)
+        if r["severity"] == "warn" and "trellis baseline" in r["message"]
+    ]
+
+
+def test_doctor_warns_about_agreed_contracts_with_no_baseline(workspace, capsys):
+    assert doctor_warnings(workspace, capsys) == [
+        "contract.tool_schema",
+        "contract.trace_format",
+    ]
+
+
+def test_without_a_baseline_a_hand_round_trip_goes_unseen(workspace):
+    """The gap baseline exists for: the file is all the guard has."""
+    hand_set(workspace, "contract.tool_schema", "status", "draft")
+    assert trellis(workspace, "set", "contract.tool_schema", "version=3", "-y") == 0
+
+
+def test_baseline_records_status_and_changes_no_yaml(workspace, capsys):
+    before = {p.name: p.read_bytes() for p in workspace.glob("*.yaml")}
+    assert trellis(workspace, "baseline") == 0
+
+    assert {p.name: p.read_bytes() for p in workspace.glob("*.yaml")} == before
+    entry = journal.read(workspace)[-1]
+    assert entry["origin"] == "baseline"
+    assert [(w["node"], w["field"], w["after"]) for w in entry["writes"]] == [
+        ("contract.tool_schema", "status", "agreed"),
+        ("contract.trace_format", "status", "agreed"),
+    ]
+    assert journal.drift(workspace, load_graph(workspace)) == []
+    assert doctor_warnings(workspace, capsys) == []
+
+
+def test_baseline_twice_records_nothing_the_second_time(workspace, capsys):
+    trellis(workspace, "baseline")
+    entries = len(journal.read(workspace))
+    capsys.readouterr()
+
+    assert trellis(workspace, "baseline") == 0
+    assert "nothing to record" in capsys.readouterr().out
+    assert len(journal.read(workspace)) == entries
+
+
+def test_after_a_baseline_a_hand_round_trip_is_refused(workspace, capsys):
+    trellis(workspace, "baseline")
+    hand_set(workspace, "contract.tool_schema", "status", "draft")
+    entries = len(journal.read(workspace))
+    capsys.readouterr()
+
+    code = trellis(workspace, "set", "contract.tool_schema", "version=3", "-y")
+    refused_cleanly(
+        workspace,
+        capsys,
+        code,
+        refusal("contract.tool_schema", "agreed", "version 2 -> 3"),
+        entries,
+    )
+
+
+def test_a_baseline_taken_after_a_walk_back_does_not_record_it(workspace):
+    """Only as honest as the moment it runs, and it says so by what it skips."""
+    hand_set(workspace, "contract.tool_schema", "status", "draft")
+    trellis(workspace, "baseline")
+    recorded = [w["node"] for w in journal.read(workspace)[-1]["writes"]]
+    assert recorded == ["contract.trace_format"]
